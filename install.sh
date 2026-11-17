@@ -108,6 +108,8 @@ setup_env() {
   PDNS_KEY=$(openssl rand -hex 16)
   local INTERNAL_TOKEN
   INTERNAL_TOKEN=$(openssl rand -hex 32)
+  local ADMIN_PASS
+  ADMIN_PASS=$(openssl rand -base64 24 | tr -dc 'A-Za-z0-9' | head -c 20)
 
   cat > "${INSTALL_DIR}/.env" << EOF
 DATABASE_URL=${DB_URL}
@@ -117,6 +119,8 @@ PANEL_DOMAIN=${DOMAIN:-localhost}
 ALLOWED_ORIGINS=https://${DOMAIN:-localhost}
 AZIMUT_ENV=community
 ADMIN_EMAIL=admin@${DOMAIN:-localhost}
+AZIMUT_ADMIN_EMAIL=admin@${DOMAIN:-localhost}
+AZIMUT_ADMIN_PASSWORD=${ADMIN_PASS}
 AZIMUT_APPS_DIR=${INSTALL_DIR}/apps
 PDNS_API_URL=http://127.0.0.1:8081
 PDNS_API_KEY=${PDNS_KEY}
@@ -191,7 +195,9 @@ print_success() {
   echo -e "${GREEN}${BOLD}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${NC}"
   echo ""
   echo -e "  Panel URL:   ${BLUE}http://${DOMAIN:-localhost}${NC}"
-  echo -e "  First login: ${YELLOW}Create admin at /setup${NC}"
+  echo -e "  Email:       ${BLUE}$(grep '^AZIMUT_ADMIN_EMAIL=' "${INSTALL_DIR}/.env" 2>/dev/null | cut -d= -f2-)${NC}"
+  echo -e "  Password:    ${BLUE}$(grep '^AZIMUT_ADMIN_PASSWORD=' "${INSTALL_DIR}/.env" 2>/dev/null | cut -d= -f2-)${NC}"
+  echo -e "  First login: ${YELLOW}change the password after signing in${NC}"
   echo -e "  Logs:        ${BLUE}journalctl -u azimut-panel -f${NC}"
   echo -e "  Docs:        ${BLUE}https://github.com/xxxronelxxx/AzimutCP#documentation${NC}"
   echo ""

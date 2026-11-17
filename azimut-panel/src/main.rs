@@ -88,6 +88,9 @@ async fn main() -> anyhow::Result<()> {
         .map_err(|e| anyhow::anyhow!("Migration failed: {}", e))?;
     tracing::info!("PostgreSQL connected, migrations applied");
 
+    // Create the first admin account on a fresh install.
+    bootstrap_admin(&db).await?;
+
     // Valkey (Redis-compatible) for session blocklist + job queue + cache
     let valkey_client = redis::Client::open(config.valkey_url.as_str())
         .map_err(|e| anyhow::anyhow!("Valkey client error: {}", e))?;
@@ -265,6 +268,56 @@ async fn main() -> anyhow::Result<()> {
 
     tracing::info!("azimut-panel shut down gracefully");
     Ok(())
+}
+
+// ── First-run bootstrap ───────────────────────────────────────────────────────
+
+/// Create the initial admin account when the `users` table is empty.
+///
+/// Credentials come from `AZIMUT_ADMIN_EMAIL` / `AZIMUT_ADMIN_PASSWORD`.
+/// If no password is supplied, a random one is generated and logged once, so a
+/// fresh install is never left without a way to sign in.
+async fn bootstrap_admin(db: &PgPool) -> anyhow::Result<()> {
+    let existing: i64 = sqlx::query_scalar("SELECT COUNT(*) FROM users")
+        .fetch_one(db)
+        .await?;
+    if existing > 0 {
+        return Ok(());
+    }
+
+    let email = std::env::var("AZIMUT_ADMIN_EMAIL")
+        .unwrap_or_else(|_| "admin@localhost".to_string());
+    let (password, generated) = match std::env::var("AZIMUT_ADMIN_PASSWORD") {
+        Ok(p) if !p.trim().is_empty() => (p, false),
+        _ => (generate_password(), true),
+    };
+
+    let hash = crate::api::auth::hash_password(&password)?;
+    sqlx::query(
+        "INSERT INTO users (email, password_hash, role, display_name, wizard_complete)
+         VALUES ($1, $2, 'admin', 'Administrator', true)",
+    )
+    .bind(&email)
+    .bind(&hash)
+    .execute(db)
+    .await?;
+
+    if generated {
+        tracing::warn!(email = %email, password = %password,
+            "Created initial admin account (generated password — change it after login)");
+    } else {
+        tracing::info!(email = %email, "Created initial admin account from AZIMUT_ADMIN_*");
+    }
+    Ok(())
+}
+
+fn generate_password() -> String {
+    use rand::Rng;
+    const ALPHABET: &[u8] = b"ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnopqrstuvwxyz23456789";
+    let mut rng = rand::thread_rng();
+    (0..20)
+        .map(|_| ALPHABET[rng.gen_range(0..ALPHABET.len())] as char)
+        .collect()
 }
 
 async fn health_check() -> &'static str { "ok" }

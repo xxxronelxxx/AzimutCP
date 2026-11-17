@@ -763,6 +763,7 @@ EOF
     # Populate azimut-panel.env with generated values
     local panel_domain; panel_domain="$(hostname -f 2>/dev/null || hostname)"
     local internal_token; internal_token=$(openssl rand -hex 32)
+    local admin_password; admin_password=$(openssl rand -base64 24 | tr -dc 'A-Za-z0-9' | head -c 20)
     cat >> "${AZIMUT_CONF_DIR}/azimut-panel.env" << EOF
 AZIMUT_ENV=${AZIMUT_ENV:-community}
 VALKEY_URL=redis://127.0.0.1:6379
@@ -770,6 +771,8 @@ PANEL_PORT=${AZIMUT_PANEL_PORT}
 PANEL_DOMAIN=${panel_domain}
 ALLOWED_ORIGINS=https://${panel_domain}
 ADMIN_EMAIL=${ADMIN_EMAIL:-admin@${panel_domain}}
+AZIMUT_ADMIN_EMAIL=${ADMIN_EMAIL:-admin@${panel_domain}}
+AZIMUT_ADMIN_PASSWORD=${admin_password}
 AZIMUT_MAIL_URL=http://127.0.0.1:5354
 AZIMUT_DNS_URL=http://127.0.0.1:5353
 AZIMUT_INTERNAL_TOKEN=${internal_token}
@@ -1063,6 +1066,9 @@ launch_wizard() {
 
     local server_ip; server_ip=$(hostname -I | awk '{print $1}')
     local panel_url="https://${server_ip}"
+    local admin_email admin_password
+    admin_email=$(grep '^AZIMUT_ADMIN_EMAIL=' "${AZIMUT_CONF_DIR}/azimut-panel.env" 2>/dev/null | cut -d= -f2-)
+    admin_password=$(grep '^AZIMUT_ADMIN_PASSWORD=' "${AZIMUT_CONF_DIR}/azimut-panel.env" 2>/dev/null | cut -d= -f2-)
 
     # Generate a first-run token (valid for 30 minutes, single-use)
     local firstrun_token; firstrun_token=$(openssl rand -hex 16)
@@ -1075,12 +1081,15 @@ launch_wizard() {
     printf "${GREEN}  AzimutCP ${AZIMUT_VERSION} installed successfully!${NC}\n"
     printf "${GREEN}═══════════════════════════════════════════════════════════════${NC}\n"
     printf "\n"
-    printf "  ${CYAN}Continue setup in your browser:${NC}\n"
+    printf "  ${CYAN}Sign in to the panel:${NC}\n"
     printf "\n"
-    printf "  ${BLUE}%s/?setup=%s${NC}\n" "${panel_url}" "${firstrun_token}"
+    printf "  ${BLUE}%s${NC}\n" "${panel_url}"
+    printf "\n"
+    printf "  ${CYAN}Email:${NC}    %s\n" "${admin_email}"
+    printf "  ${CYAN}Password:${NC} %s\n" "${admin_password}"
+    printf "  ${YELLOW}Change this password after the first login.${NC}\n"
     printf "\n"
     printf "  ${YELLOW}Important:${NC}\n"
-    printf "  • This setup link expires in 30 minutes\n"
     printf "  • Add your SSH public key before logging out of this terminal\n"
     printf "    (SSH root login has been disabled)\n"
     printf "  • To add your SSH key:\n"
