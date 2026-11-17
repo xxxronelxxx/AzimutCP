@@ -83,6 +83,40 @@ jobs:
           fi
           exit 1
 
+      - name: Verify software catalog and install jpegoptim
+        run: |
+          set -euo pipefail
+          TOKEN=$(cat /tmp/azimut_token)
+          AUTH="Authorization: Bearer ${TOKEN}"
+
+          curl -fsS -H "$AUTH" http://127.0.0.1:2087/api/v1/software -o /tmp/software.json
+          python3 - <<'PY'
+          import json
+          data = json.load(open('/tmp/software.json'))
+          ids = {i['id'] for i in data}
+          for required in ('php', 'postgresql', 'redis', 'nodejs', 'composer'):
+              assert required in ids, (required, ids)
+          print('software catalog OK:', len(data), 'items')
+          PY
+
+          curl -fsS -X POST -H "$AUTH" -H 'Content-Type: application/json' \
+            -d '{"version":"latest"}' \
+            http://127.0.0.1:2087/api/v1/software/jpegoptim/install
+
+          for _ in $(seq 1 36); do
+            curl -fsS -H "$AUTH" http://127.0.0.1:2087/api/v1/software -o /tmp/software.json
+            installed=$(python3 -c "import json;d=json.load(open('/tmp/software.json'));print(int(any(i['id']=='jpegoptim' and any(v['installed'] for v in i['versions']) for i in d)))")
+            if [ "$installed" = "1" ]; then
+              echo "jpegoptim installed via catalog"
+              exit 0
+            fi
+            sleep 5
+          done
+
+          echo "jpegoptim installation timed out" >&2
+          journalctl -u azimut-panel -n 80 --no-pager || true
+          exit 1
+
       - name: Dump logs on failure
         if: failure()
         run: |
