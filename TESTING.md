@@ -1,6 +1,6 @@
 # Testing AzimutCP on a VM
 
-This describes the **minimal test build**: panel API + UI + PostgreSQL +
+This describes the **minimal build**: panel API + UI + PostgreSQL +
 Valkey + nginx. Mail, DNS (PowerDNS), Apache/OLS, quotas and cgroups are not
 configured — those need the full installer and a real hosting setup.
 
@@ -34,19 +34,19 @@ bin/                  azimut-panel, azimut-agent, azimut-dns, azimut-mail,
 ui/ui.tar.gz          prebuilt SvelteKit UI
 apps/                 app catalog manifests
 scripts/              Roundcube / SOGo SSO helpers
-install-test.sh       test installer
+install-minimal.sh       minimal installer
 ```
 
 ## 2. Install
 
 ```bash
-sudo ./install-test.sh
+sudo ./install-minimal.sh
 ```
 
 Or pass the panel address explicitly (domain or IP):
 
 ```bash
-sudo ./install-test.sh cp.example.com
+sudo ./install-minimal.sh cp.example.com
 ```
 
 The script installs packages, creates the `azimutcp` user and database, writes
@@ -71,7 +71,27 @@ The admin account is created automatically by the panel on first start.
 - users, settings, audit log, firewall pages load;
 - browser console has no errors; UI WebSocket connects (`/ws/`).
 
-## 4. Logs and configuration
+## 4. If the page shows only “Skip to main content”
+
+The minimal installer serves the panel over **HTTP** only (port 80). There is
+no TLS listener, so `https://<address>/` will not work — use `http://`.
+
+If HTTP opens but the page is blank except for the “Skip to main content”
+link, the browser kept an old service worker / cached SPA shell from a previous
+build. Do a hard reload and clear the site data:
+
+1. DevTools → Application → Service Workers → **Unregister**.
+2. Application → Storage → **Clear site data**.
+3. `Ctrl+Shift+R` (or reopen in a private window).
+
+Fresh builds send `Cache-Control: no-store` for HTML and the service worker no
+longer caches the shell, so this should not happen again after an update.
+
+To put HTTPS in front of the panel, point a real domain at the server and
+terminate TLS in nginx (for example with certbot). The panel itself only needs
+`http://127.0.0.1:2087` and `http://127.0.0.1:3000`.
+
+## 5. Logs and configuration
 
 ```bash
 journalctl -u azimut-panel -f
@@ -86,13 +106,13 @@ curl -s http://127.0.0.1:2087/health
 curl -s http://127.0.0.1:2087/health/ready
 ```
 
-## 5. Re-running
+## 6. Re-running
 
 Re-running the installer keeps the database password and admin credentials
 already present in `/etc/azimutcp/panel.env`, and replaces binaries, UI and
 unit files. Migrations are applied by the panel on startup.
 
-## 6. Rebuild from source
+## 7. Rebuild from source
 
 If you need to build the bundle yourself, see the release workflow:
 `.github/workflows/release.yml`. Locally on Linux:

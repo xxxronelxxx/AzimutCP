@@ -84,7 +84,7 @@ checksum and sets up the panel API, the UI, PostgreSQL, Valkey, nginx and
 systemd units. Credentials for the initial admin account are printed at the
 end.
 
-This is the **minimal test install**: mail, PowerDNS, Apache/OLS, quotas and
+This is the **minimal install**: mail, PowerDNS, Apache/OLS, quotas and
 cgroups are not configured yet. See [TESTING.md](TESTING.md) for details and
 troubleshooting.
 

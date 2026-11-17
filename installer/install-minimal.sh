@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # =============================================================================
-# AzimutCP — minimal single-server test installer
+# AzimutCP — minimal single-server installer
 #
 # Intended for a FRESH Ubuntu 22.04/24.04 or Debian 12 VM. It installs only
 # what is needed to open the panel and click around:
@@ -11,7 +11,7 @@
 # used. Do not run this on a production server.
 #
 # Usage:
-#   sudo ./install-test.sh [panel-domain-or-ip]
+#   sudo ./install-minimal.sh [panel-domain-or-ip]
 # =============================================================================
 set -euo pipefail
 
@@ -43,7 +43,7 @@ apt_run() {
     fi
 }
 
-[ "$(id -u)" -eq 0 ] || die "Run as root: sudo ./install-test.sh"
+[ "$(id -u)" -eq 0 ] || die "Run as root: sudo ./install-minimal.sh"
 
 [ -d "${ROOT}/bin" ] || die "bin/ not found next to this script — unpack the release bundle first"
 [ -f "${ROOT}/ui/ui.tar.gz" ] || die "ui/ui.tar.gz not found — unpack the release bundle first"
@@ -90,7 +90,7 @@ fi
 systemctl enable --now postgresql >/dev/null 2>&1 || systemctl start postgresql
 systemctl enable --now redis-server >/dev/null 2>&1 || systemctl start redis-server
 
-# nginx must own port 80 on a fresh test box
+# nginx must own port 80 on a fresh server
 if systemctl is-active --quiet apache2 2>/dev/null; then
     warn "Stopping apache2 so nginx can bind port 80"
     systemctl disable --now apache2 >/dev/null 2>&1 || true
@@ -277,7 +277,7 @@ fi
 cat <<EOF
 
 $(printf '\033[0;32m')═══════════════════════════════════════════════════════════════$(printf '\033[0m')
-  AzimutCP test installation complete
+  AzimutCP installation complete
 $(printf '\033[0;32m')═══════════════════════════════════════════════════════════════$(printf '\033[0m')
 
   Open:      http://${DOMAIN}/
@@ -288,6 +288,6 @@ $(printf '\033[0;32m')═══════════════════�
              journalctl -u azimut-ui -f
   Config:    ${ENV_FILE}
 
-  Not configured by this test installer: mail, DNS/PowerDNS, OLS/Apache,
+  Minimal profile — not configured: mail, DNS/PowerDNS, OLS/Apache,
   cgroups/quotas. Use installer/install.sh for a full stack.
 EOF

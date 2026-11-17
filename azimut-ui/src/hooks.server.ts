@@ -34,6 +34,19 @@ export const handle: Handle = async ({ event, resolve }) => {
     'camera=(), microphone=(), geolocation=(), payment=(), usb=(), interest-cohort=()',
   );
 
+  // ── Cache policy ────────────────────────────────────────────────────────────
+  // HTML must never be cached: a cached SPA shell references hashed assets from
+  // the build it was generated with, so after an upgrade the browser would load
+  // stale HTML and 404 on the new JS/CSS. Assets themselves are immutable and
+  // hashed, so they can stay cacheable.
+  const contentType = response.headers.get('content-type') ?? '';
+  if (contentType.includes('text/html')) {
+    response.headers.set('Cache-Control', 'no-store, must-revalidate');
+  }
+  if (event.url.pathname === '/sw.js') {
+    response.headers.set('Cache-Control', 'no-cache');
+  }
+
   // ── Content-Security-Policy ──────────────────────────────────────────────────
   // Directives are intentionally strict for a server-admin control panel:
   //   • No inline scripts or styles unless explicitly allowed via nonces (not
@@ -57,8 +70,9 @@ export const handle: Handle = async ({ event, resolve }) => {
     "base-uri 'self'",
     "form-action 'self'",
     "frame-ancestors 'none'",
-    // Force HTTPS in production (browsers ignore this on http:)
-    'upgrade-insecure-requests',
+    // Only meaningful over HTTPS; adding it to an HTTP-only panel can make the
+    // browser upgrade asset requests to https:// and break the UI.
+    ...(event.url.protocol === 'https:' ? ['upgrade-insecure-requests'] : []),
   ].join('; ');
 
   response.headers.set('Content-Security-Policy', csp);

@@ -124,8 +124,8 @@ fi
 log "Unpacking…"
 mkdir -p "${TMP_DIR}/bundle"
 tar -xzf "${TMP_DIR}/${BUNDLE_NAME}" -C "${TMP_DIR}/bundle"
-[ -f "${TMP_DIR}/bundle/install-test.sh" ] || die "invalid bundle: install-test.sh missing"
-chmod +x "${TMP_DIR}/bundle/install-test.sh"
+[ -f "${TMP_DIR}/bundle/install-minimal.sh" ] || die "invalid bundle: install-minimal.sh missing"
+chmod +x "${TMP_DIR}/bundle/install-minimal.sh"
 
 if [ "${FETCH_ONLY}" = "1" ]; then
     log "AZIMUT_FETCH_ONLY=1 — bundle unpacked at ${TMP_DIR}/bundle (kept for inspection)"
@@ -137,7 +137,7 @@ log "Starting installation…"
 echo
 
 if [ -n "${DOMAIN}" ]; then
-    "${TMP_DIR}/bundle/install-test.sh" "${DOMAIN}"
+    "${TMP_DIR}/bundle/install-minimal.sh" "${DOMAIN}"
 else
-    "${TMP_DIR}/bundle/install-test.sh"
+    "${TMP_DIR}/bundle/install-minimal.sh"
 fi

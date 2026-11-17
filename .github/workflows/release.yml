@@ -80,10 +80,10 @@ jobs:
           tar -czf bundle/ui/ui.tar.gz -C azimut-ui build package.json package-lock.json
           cp -r azimut-panel/apps/. bundle/apps/
           cp -r scripts/. bundle/scripts/
-          cp installer/install-test.sh bundle/install-test.sh
+          cp installer/install-minimal.sh bundle/install-minimal.sh
           cp TESTING.md bundle/TESTING.md
           cp LICENSE NOTICE bundle/
-          chmod +x bundle/install-test.sh
+          chmod +x bundle/install-minimal.sh
 
           tar -czf dist/azimutcp-linux-x86_64.tar.gz -C bundle .
 
