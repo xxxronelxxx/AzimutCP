@@ -1,0 +1,17 @@
+AzimutCP
+Copyright (C) 2026 AzimutCP contributors
+
+This product is based on OrbitCP (https://github.com/multidigitaltools/OrbitCP),
+Copyright (C) 2026 MultiDigitalTools, licensed under the GNU Affero General
+Public License, version 3 or (at your option) any later version.
+
+AzimutCP contains modifications and additions by the AzimutCP contributors.
+The combined work is distributed under the GNU Affero General Public License
+v3.0 or later. See the LICENSE file for the full license text.
+
+Corresponding source code:
+  https://github.com/xxxronelxxx/AzimutCP
+
+Third-party components (Rust crates, npm packages, bundled PHP scripts) remain
+under their own licenses. See Cargo.lock, azimut-ui/package-lock.json and the
+individual source files for details.

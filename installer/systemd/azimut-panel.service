@@ -1,0 +1,46 @@
+[Unit]
+Description=AzimutCP Panel API Server
+After=network.target postgresql.service valkey.service
+Wants=postgresql.service valkey.service
+
+[Service]
+Type=simple
+User=azimutcp
+Group=azimutcp
+WorkingDirectory=/opt/azimutcp
+ExecStart=/opt/azimutcp/bin/azimut-panel
+Restart=always
+RestartSec=5
+StartLimitBurst=3
+StartLimitIntervalSec=60
+EnvironmentFile=/etc/azimutcp/panel.env
+LimitNOFILE=65536
+StandardOutput=journal
+StandardError=journal
+SyslogIdentifier=azimut-panel
+
+# Graceful shutdown — allow 30s for in-flight requests to drain
+TimeoutStopSec=30
+KillMode=mixed
+KillSignal=SIGTERM
+
+# Security hardening
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=strict
+ReadWritePaths=/var/log/azimutcp /var/lib/azimutcp /etc/azimutcp
+CapabilityBoundingSet=
+AmbientCapabilities=
+ProtectKernelTunables=true
+ProtectKernelModules=true
+ProtectControlGroups=true
+RestrictAddressFamilies=AF_INET AF_INET6 AF_UNIX
+RestrictNamespaces=true
+LockPersonality=true
+MemoryDenyWriteExecute=true
+RestrictRealtime=true
+SystemCallFilter=@system-service
+SystemCallErrorNumber=EPERM
+
+[Install]
+WantedBy=multi-user.target

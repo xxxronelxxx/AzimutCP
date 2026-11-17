@@ -1,0 +1,30 @@
+[Unit]
+Description=AzimutCP MCP Server
+Documentation=https://github.com/xxxronelxxx/AzimutCP#readme
+After=network.target azimut-panel.service
+Requires=azimut-panel.service
+
+[Service]
+Type=simple
+User=azimutcp
+Group=azimutcp
+ExecStart=/usr/local/bin/azimut-mcp --http
+Environment=AZIMUT_PANEL_URL=http://127.0.0.1:2087
+EnvironmentFile=/etc/azimutcp/mcp.env
+
+# Restart policy
+Restart=on-failure
+RestartSec=5s
+
+# Security hardening
+NoNewPrivileges=yes
+PrivateTmp=yes
+ProtectSystem=strict
+ProtectHome=yes
+ReadWritePaths=/var/log/azimutcp
+
+# Resource limits
+LimitNOFILE=65536
+
+[Install]
+WantedBy=multi-user.target
