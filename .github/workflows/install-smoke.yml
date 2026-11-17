@@ -42,8 +42,41 @@ jobs:
           d = json.load(open('/tmp/login.json'))
           assert d.get('access_token'), d
           assert d.get('role') == 'admin', d
+          open('/tmp/azimut_token', 'w').write(d['access_token'])
           print('login OK, role =', d['role'])
           PY
+
+      - name: Verify PHP versions API and install 8.4
+        run: |
+          set -euo pipefail
+          TOKEN=$(cat /tmp/azimut_token)
+          AUTH="Authorization: Bearer ${TOKEN}"
+
+          echo "--- installed versions ---"
+          curl -fsS -H "$AUTH" http://127.0.0.1:2087/api/v1/php/versions | tee /tmp/versions.json
+          python3 - <<'PY'
+          import json
+          d = json.load(open('/tmp/versions.json'))
+          assert any(v['version'] == '8.3' and v['installed'] for v in d['versions']), d
+          print('PHP 8.3 detected as installed')
+          PY
+
+          echo "--- queue PHP 8.4 install ---"
+          curl -fsS -X POST -H "$AUTH" http://127.0.0.1:2087/api/v1/php/versions/8.4/install
+
+          for _ in $(seq 1 60); do
+            curl -fsS -H "$AUTH" http://127.0.0.1:2087/api/v1/php/versions -o /tmp/versions.json
+            installed=$(python3 -c "import json;d=json.load(open('/tmp/versions.json'));print(int(any(v['version']=='8.4' and v['installed'] for v in d['versions'])))")
+            if [ "$installed" = "1" ]; then
+              echo "PHP 8.4 installed"
+              exit 0
+            fi
+            sleep 5
+          done
+
+          echo "PHP 8.4 installation timed out" >&2
+          journalctl -u azimut-panel -n 80 --no-pager || true
+          exit 1
 
       - name: Dump logs on failure
         if: failure()
