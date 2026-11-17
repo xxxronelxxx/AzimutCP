@@ -110,6 +110,12 @@ case "${ID}" in
             apt_update
             apt_install mysql-community-server
             systemctl enable --now mysql >/dev/null 2>&1 || true
+            install -d -m750 /etc/azimutcp
+            printf '[client]
+user=root
+socket=/run/mysqld/mysqld.sock
+' > /etc/azimutcp/mysql-admin.cnf
+            chmod 600 /etc/azimutcp/mysql-admin.cnf
         else
             apt_remove mysql-community-server
         fi
@@ -129,6 +135,12 @@ case "${ID}" in
             apt_update
             apt_install mariadb-server
             systemctl enable --now mariadb >/dev/null 2>&1 || true
+            install -d -m750 /etc/azimutcp
+            printf '[client]
+user=root
+socket=/run/mysqld/mysqld.sock
+' > /etc/azimutcp/mysql-admin.cnf
+            chmod 600 /etc/azimutcp/mysql-admin.cnf
         else
             apt_remove mariadb-server
         fi
