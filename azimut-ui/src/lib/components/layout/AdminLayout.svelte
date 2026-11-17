@@ -12,6 +12,7 @@
 
   // ── Page content fade-up on navigation ───────────────────────────────────────
   let contentKey = 0;
+  let panelName = 'AzimutCP';
   afterNavigate(() => { contentKey++; });
 
   // ── Navigation groups ─────────────────────────────────────────────────────
@@ -87,6 +88,10 @@
     impersonationEmail = localStorage.getItem('azimut_impersonate_email');
     try {
       notifications = await api.notifications.list({ unread_only: true });
+    } catch { /* ignore */ }
+    try {
+      const b = await api.branding.get();
+      if (b.panel_name) panelName = b.panel_name;
     } catch { /* ignore */ }
   });
 
@@ -213,7 +218,7 @@
         <AzimutIcon size={18} className="text-primary-foreground" />
       </div>
       <div class="leading-tight">
-        <span class="font-bold text-foreground text-sm tracking-tight">AzimutCP</span>
+        <span class="font-bold text-foreground text-sm tracking-tight">{panelName}</span>
         <span class="block text-muted-foreground text-[10px] font-medium">v1.0</span>
       </div>
     </div>
@@ -373,7 +378,7 @@
 
       <!-- Breadcrumb -->
       <nav aria-label="Breadcrumb" class="hidden sm:flex items-center gap-1 text-sm min-w-0 flex-1">
-        <span class="text-muted-foreground shrink-0">AzimutCP</span>
+        <span class="text-muted-foreground shrink-0">{panelName}</span>
         {#each breadcrumbs as crumb, i}
           <svg class="w-3.5 h-3.5 text-muted-foreground/50 shrink-0" fill="none" viewBox="0 0 24 24"
                stroke="currentColor" stroke-width="2" aria-hidden="true">
