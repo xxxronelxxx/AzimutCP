@@ -82,6 +82,8 @@ mkdir -p "${PANEL_DIR}/bin" "${PANEL_DIR}/ui" "${PANEL_DIR}/apps" \
          "${CONF_DIR}" "${DATA_DIR}" "${LOG_DIR}" "${BACKUP_DIR}"
 
 install -m755 "${ROOT}"/bin/azimut-* "${PANEL_DIR}/bin/"
+[ -f "${ROOT}/bin/azimut" ] && install -m755 "${ROOT}/bin/azimut" "${PANEL_DIR}/bin/azimut"
+ln -sf "${PANEL_DIR}/bin/azimut" /usr/local/bin/azimut
 tar -xzf "${ROOT}/ui/ui.tar.gz" -C "${PANEL_DIR}/ui"
 if [ -d "${ROOT}/apps" ]; then
     cp -r "${ROOT}/apps/." "${PANEL_DIR}/apps/"

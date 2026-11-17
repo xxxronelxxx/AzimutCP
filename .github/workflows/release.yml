@@ -65,10 +65,14 @@ jobs:
           set -euo pipefail
           mkdir -p dist bundle/bin bundle/ui bundle/apps bundle/scripts
 
-          for b in panel agent dns mail cron cli mcp; do
+          for b in panel agent dns mail cron mcp; do
             install -m755 "target/release/azimut-$b" "dist/azimut-$b-linux-x86_64"
             install -m755 "target/release/azimut-$b" "bundle/bin/azimut-$b"
           done
+
+          # The CLI binary is named `azimut` (not `azimut-cli`).
+          install -m755 target/release/azimut dist/azimut-cli-linux-x86_64
+          install -m755 target/release/azimut bundle/bin/azimut
 
           tar -czf dist/azimut-ui.tar.gz -C azimut-ui build package.json package-lock.json
           tar -czf dist/azimut-apps.tar.gz -C azimut-panel apps
