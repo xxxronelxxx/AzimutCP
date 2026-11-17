@@ -16,6 +16,8 @@
 set -euo pipefail
 
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+# runuser/psql warn when the current directory is not readable by postgres
+cd /
 PANEL_DIR="/opt/azimutcp"
 CONF_DIR="/etc/azimutcp"
 DATA_DIR="/var/lib/azimutcp"
@@ -239,7 +241,8 @@ nginx -t >/dev/null
 systemctl daemon-reload
 systemctl enable --now azimut-panel >/dev/null 2>&1 || true
 systemctl enable --now azimut-ui >/dev/null 2>&1 || systemctl restart azimut-ui >/dev/null 2>&1 || true
-systemctl reload nginx
+systemctl enable --now nginx >/dev/null 2>&1 || systemctl start nginx >/dev/null 2>&1 || true
+systemctl reload nginx || systemctl restart nginx
 
 # ── Wait for the panel ────────────────────────────────────────────────────────
 log "Waiting for the panel to become ready…"
