@@ -152,6 +152,8 @@ struct SiteInfo {
 
 pub fn router() -> Router<Arc<AppState>> {
     Router::new()
+        .route("/api/v1/php/versions",                        get(list_php_versions))
+        .route("/api/v1/php/versions/{version}/install",       post(install_php_version))
         .route("/api/v1/php/extensions/{site_id}",            get(list_extensions))
         .route("/api/v1/php/extensions/{site_id}/batch",      put(batch_toggle_extensions))
         .route("/api/v1/php/extensions/{site_id}/{ext_name}", put(toggle_extension))
@@ -161,6 +163,155 @@ pub fn router() -> Router<Arc<AppState>> {
         .route("/api/v1/php/settings/{site_id}",              get(get_settings).put(update_settings))
         .route("/api/v1/php/info/{site_id}",                  get(php_info))
         .route("/api/v1/php/version/{site_id}",               put(change_php_version))
+}
+
+// ── PHP versions ──────────────────────────────────────────────────────────────
+
+/// Versions the panel knows how to install (Ondřej Surý packages).
+const KNOWN_PHP_VERSIONS: &[&str] = &["8.4", "8.3", "8.2", "8.1", "8.0", "7.4"];
+
+const PHP_INSTALL_HELPER: &str = "/usr/local/sbin/azimut-php-install";
+
+fn valid_php_version(version: &str) -> bool {
+    regex::Regex::new(r"^[78]\.[0-9]$").unwrap().is_match(version)
+}
+
+/// Detect PHP-FPM versions actually installed on this server.
+fn detect_installed_php_versions() -> Vec<String> {
+    let mut found = Vec::new();
+    if let Ok(entries) = std::fs::read_dir("/etc/php") {
+        for entry in entries.flatten() {
+            let name = entry.file_name().to_string_lossy().to_string();
+            if !valid_php_version(&name) {
+                continue;
+            }
+            if std::path::Path::new(&format!("/etc/php/{name}/fpm")).is_dir()
+                || std::path::Path::new(&format!("/usr/sbin/php-fpm{name}")).exists()
+            {
+                found.push(name);
+            }
+        }
+    }
+    found.sort_by(|a, b| {
+        let av: f32 = a.parse().unwrap_or(0.0);
+        let bv: f32 = b.parse().unwrap_or(0.0);
+        bv.partial_cmp(&av).unwrap_or(std::cmp::Ordering::Equal)
+    });
+    found.dedup();
+    found
+}
+
+/// List installed and installable PHP versions plus per-version site counts.
+async fn list_php_versions(
+    State(state): State<Arc<AppState>>,
+    claims: Claims,
+) -> ApiResult<Json<serde_json::Value>> {
+    let _ = caller(&claims)?;
+
+    let installed = detect_installed_php_versions();
+
+    let rows = sqlx::query!(
+        r#"SELECT php_version, COUNT(*) AS "count!"
+           FROM sites
+           WHERE deleted_at IS NULL
+           GROUP BY php_version"#
+    )
+    .fetch_all(&state.db)
+    .await?;
+
+    let mut counts = std::collections::HashMap::new();
+    for row in &rows {
+        counts.insert(row.php_version.clone(), row.count);
+    }
+
+    let mut versions: Vec<String> = installed.clone();
+    for known in KNOWN_PHP_VERSIONS {
+        if !versions.iter().any(|v| v == known) {
+            versions.push((*known).to_string());
+        }
+    }
+    versions.sort_by(|a, b| {
+        let av: f32 = a.parse().unwrap_or(0.0);
+        let bv: f32 = b.parse().unwrap_or(0.0);
+        bv.partial_cmp(&av).unwrap_or(std::cmp::Ordering::Equal)
+    });
+
+    let latest = installed.first().cloned();
+    let list: Vec<serde_json::Value> = versions
+        .iter()
+        .map(|v| {
+            serde_json::json!({
+                "version":   v,
+                "installed": installed.iter().any(|i| i == v),
+                "sites":     counts.get(v).copied().unwrap_or(0),
+                "latest":    latest.as_deref() == Some(v.as_str()),
+            })
+        })
+        .collect();
+
+    Ok(Json(serde_json::json!({
+        "versions": list,
+        "default":  latest.unwrap_or_else(|| "8.3".to_string()),
+        "installer_available": std::path::Path::new(PHP_INSTALL_HELPER).exists(),
+    })))
+}
+
+/// Queue installation of a PHP-FPM version via the root helper.
+async fn install_php_version(
+    State(state): State<Arc<AppState>>,
+    claims: Claims,
+    Path(version): Path<String>,
+) -> ApiResult<(StatusCode, Json<serde_json::Value>)> {
+    let (_, is_admin) = caller(&claims)?;
+    if !is_admin {
+        return Err(ApiError::Forbidden(
+            "Only administrators can install PHP versions".into(),
+        ));
+    }
+    if !valid_php_version(&version) {
+        return Err(ApiError::Validation(format!("Invalid PHP version: {version}")));
+    }
+    if detect_installed_php_versions().iter().any(|v| v == &version) {
+        return Err(ApiError::Validation(format!("PHP {version} is already installed")));
+    }
+    if !std::path::Path::new(PHP_INSTALL_HELPER).exists() {
+        return Err(ApiError::Validation(
+            "PHP installer helper is missing. Re-run the installer or install the package manually.".into(),
+        ));
+    }
+
+    // One installation per version at a time.
+    {
+        use redis::AsyncCommands;
+        let mut conn = state.valkey.clone();
+        let key = format!("azimut:php:installing:{version}");
+        let acquired: Option<String> = redis::cmd("SET")
+            .arg(&key)
+            .arg("1")
+            .arg("NX")
+            .arg("EX")
+            .arg(900)
+            .query_async(&mut conn)
+            .await
+            .unwrap_or(None);
+        if acquired.is_none() {
+            return Err(ApiError::Validation(format!(
+                "PHP {version} installation is already in progress"
+            )));
+        }
+
+        let job = serde_json::json!({
+            "type": "install_php_version",
+            "version": version,
+        });
+        let _: () = conn.lpush("azimut:jobs", job.to_string()).await.unwrap_or(());
+    }
+
+    tracing::info!(version = %version, "PHP version installation queued");
+    Ok((
+        StatusCode::ACCEPTED,
+        Json(serde_json::json!({ "status": "queued", "version": version })),
+    ))
 }
 
 // ── Access helpers ────────────────────────────────────────────────────────────

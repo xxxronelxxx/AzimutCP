@@ -74,6 +74,9 @@ jobs:
           install -m755 target/release/azimut dist/azimut-cli-linux-x86_64
           install -m755 target/release/azimut bundle/bin/azimut
 
+          # Root helper for installing PHP versions from the panel.
+          install -m755 installer/azimut-php-install.sh bundle/bin/azimut-php-install
+
           tar -czf dist/azimut-ui.tar.gz -C azimut-ui build package.json package-lock.json
           tar -czf dist/azimut-apps.tar.gz -C azimut-panel apps
 

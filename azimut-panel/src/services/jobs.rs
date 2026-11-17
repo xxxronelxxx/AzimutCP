@@ -86,6 +86,7 @@ async fn process_next_job(state: &Arc<AppState>) -> anyhow::Result<bool> {
         "suspend_site"       => dispatch_suspend_site(state, &job).await,
         "unsuspend_site"     => dispatch_unsuspend_site(state, &job).await,
         "change_php_version" => dispatch_change_php_version(state, &job).await,
+        "install_php_version" => dispatch_install_php_version(state, &job).await,
         "backup_site"        => dispatch_backup_site(state, &job).await,
         "run_backup"         => dispatch_backup_site(state, &job).await,
         "restore_backup"     => dispatch_restore_backup(state, &job).await,
@@ -288,6 +289,56 @@ async fn dispatch_unsuspend_site(state: &Arc<AppState>, job: &serde_json::Value)
     } else if let Err(e) = provisioning::unsuspend_site_files(state, site_id).await {
         tracing::error!(site_id = %site_id, error = %e, "unsuspend_site failed");
     }
+}
+
+async fn dispatch_install_php_version(state: &Arc<AppState>, job: &serde_json::Value) {
+    let version = job["version"].as_str().unwrap_or("").to_string();
+
+    if !regex::Regex::new(r"^[78]\.[0-9]$").unwrap().is_match(&version) {
+        tracing::error!(job = %job, "install_php_version: invalid version");
+        return;
+    }
+
+    let helper = "/usr/local/sbin/azimut-php-install";
+    if !std::path::Path::new(helper).exists() {
+        tracing::error!(version = %version, "install_php_version: helper not found");
+        clear_php_install_lock(state, &version).await;
+        return;
+    }
+
+    tracing::info!(version = %version, "Installing PHP version");
+
+    let result = tokio::process::Command::new("sudo")
+        .args(["-n", helper, &version])
+        .output()
+        .await;
+
+    match result {
+        Ok(out) if out.status.success() => {
+            tracing::info!(version = %version, "PHP version installed");
+        }
+        Ok(out) => {
+            tracing::error!(
+                version = %version,
+                code = ?out.status.code(),
+                stderr = %String::from_utf8_lossy(&out.stderr),
+                "PHP version installation failed"
+            );
+        }
+        Err(e) => {
+            tracing::error!(version = %version, error = %e, "Failed to start PHP installation helper");
+        }
+    }
+
+    clear_php_install_lock(state, &version).await;
+}
+
+async fn clear_php_install_lock(state: &Arc<AppState>, version: &str) {
+    let mut conn = state.valkey.clone();
+    let _: Result<(), _> = redis::cmd("DEL")
+        .arg(format!("azimut:php:installing:{version}"))
+        .query_async(&mut conn)
+        .await;
 }
 
 async fn dispatch_change_php_version(state: &Arc<AppState>, job: &serde_json::Value) {

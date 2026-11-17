@@ -67,7 +67,7 @@ apt_run update -qq
 # apt-utils keeps debconf quiet during the installs below.
 apt_run install -y -qq apt-utils
 apt_run install -y -qq \
-    curl ca-certificates openssl gnupg \
+    curl ca-certificates openssl gnupg sudo \
     postgresql postgresql-contrib \
     redis-server nginx
 
@@ -112,6 +112,29 @@ fi
 tar -xzf "${ROOT}/ui/ui.tar.gz" -C "${PANEL_DIR}/ui"
 if [ -d "${ROOT}/apps" ]; then
     cp -r "${ROOT}/apps/." "${PANEL_DIR}/apps/"
+fi
+
+# Root helper used by the panel to install PHP versions on demand.
+if [ -f "${ROOT}/bin/azimut-php-install" ]; then
+    install -m755 "${ROOT}/bin/azimut-php-install" /usr/local/sbin/azimut-php-install
+    cat > /etc/sudoers.d/azimutcp-php <<'SUDOERS'
+azimutcp ALL=(root) NOPASSWD: /usr/local/sbin/azimut-php-install *
+SUDOERS
+    chmod 440 /etc/sudoers.d/azimutcp-php
+    visudo -cf /etc/sudoers.d/azimutcp-php >/dev/null 2>&1 || {
+        rm -f /etc/sudoers.d/azimutcp-php
+        warn "Could not validate the PHP installer sudo rule — in-panel PHP installs are disabled"
+    }
+fi
+
+log "Installing PHP 8.3…"
+if [ -x /usr/local/sbin/azimut-php-install ]; then
+    if ! /usr/local/sbin/azimut-php-install 8.3 >>"${APT_LOG}" 2>&1; then
+        tail -n 40 "${APT_LOG}" >&2
+        warn "PHP 8.3 installation failed — you can retry from the PHP page in the panel"
+    fi
+else
+    warn "PHP installer helper is missing from the bundle — PHP was not installed"
 fi
 
 # The SvelteKit adapter-node build is self-contained: it runs with just

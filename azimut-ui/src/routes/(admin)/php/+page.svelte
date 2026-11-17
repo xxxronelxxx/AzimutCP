@@ -51,6 +51,13 @@
   $: activeVer = versionTab || installedVersions[0] || '';
   $: activeVerCount = versionSiteCount[activeVer] ?? 0;
 
+  // Installed PHP versions (server-side, not just "used by a site")
+  type PhpVersion = { version: string; installed: boolean; sites: number; latest: boolean };
+  let phpVersions: PhpVersion[] = [];
+  let installerAvailable = true;
+  let installingVersion = '';
+  let versionError = '';
+
   // Version comparison table
   let showVersionCompare = false;
 
@@ -83,7 +90,10 @@
     '7.4': { label: '7.4',  color: 'muted',  textColor: 'text-muted-foreground',  bgColor: 'bg-muted/60',  borderColor: 'border-border' },
   };
 
-  const allVersions = ['8.4', '8.3', '8.2', '8.1', '8.0', '7.4'];
+  let allVersions = ['8.4', '8.3', '8.2', '8.1', '8.0', '7.4'];
+  $: if (phpVersions.length > 0) {
+    allVersions = phpVersions.map(v => v.version);
+  }
 
   // Version feature comparison data
   const versionFeatures: { feature: string; versions: Record<string, boolean> }[] = [
@@ -189,6 +199,7 @@
     try {
       const resp = await api.sites.list();
       sites = resp.map((s: any) => ({ id: s.id, domain: s.domain, php_version: s.php_version }));
+      await loadPhpVersions();
       if (sites.length > 0) {
         selectedSiteId = sites[0].id;
         await loadExtensions();
@@ -200,10 +211,43 @@
     }
   });
 
+  async function loadPhpVersions() {
+    try {
+      const res = await api.php.versions();
+      phpVersions = res.versions;
+      installerAvailable = res.installer_available;
+    } catch {
+      // Older backend without the versions API — keep the static list.
+    }
+  }
+
+  async function installVersion(version: string) {
+    if (installingVersion) return;
+    versionError = '';
+    installingVersion = version;
+    try {
+      await api.php.installVersion(version);
+      // Installing packages takes a while; poll until it shows up.
+      for (let attempt = 0; attempt < 36; attempt++) {
+        await new Promise((resolve) => setTimeout(resolve, 5000));
+        await loadPhpVersions();
+        if (phpVersions.some(v => v.version === version && v.installed)) break;
+      }
+    } catch (err: unknown) {
+      const e = err as { message?: string; error?: string };
+      versionError = e.message ?? e.error ?? `Failed to install PHP ${version}`;
+    } finally {
+      installingVersion = '';
+    }
+  }
+
   // ── Derived ────────────────────────────────────────────────────────────────
   $: selectedSite = sites.find(s => s.id === selectedSiteId);
 
   $: installedVersions = (() => {
+    if (phpVersions.length > 0) {
+      return phpVersions.filter(v => v.installed).map(v => v.version);
+    }
     const seen = new Set<string>();
     for (const s of sites) if (s.php_version) seen.add(s.php_version);
     return allVersions.filter(v => seen.has(v));
@@ -503,40 +547,60 @@
       <div class="flex items-center justify-between mb-4">
         <div>
           <h2 class="text-base font-semibold text-foreground">PHP Version Management</h2>
-          <p class="text-sm text-muted-foreground mt-0.5">Installed versions currently in use across your sites.</p>
+          <p class="text-sm text-muted-foreground mt-0.5">
+            Versions installed on this server. Installing a version runs the package manager and can take a minute.
+          </p>
+          {#if versionError}
+            <p class="text-xs text-red-400 mt-1">{versionError}</p>
+          {/if}
         </div>
       </div>
 
       <div class="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-3">
         {#each allVersions as ver}
+          {@const info = phpVersions.find(v => v.version === ver)}
           {@const meta = versionMeta[ver] ?? { textColor: 'text-muted-foreground', bgColor: 'bg-muted/60', borderColor: 'border-border' }}
           {@const count = versionSiteCount[ver] ?? 0}
-          {@const installed = count > 0}
+          {@const isInstalled = info ? info.installed : count > 0}
           <div class="rounded-xl border p-4 flex flex-col gap-2 transition-all duration-200
-            {installed
+            {isInstalled
               ? 'border-border bg-background hover:-translate-y-0.5 hover:shadow-xl hover:shadow-black/20'
-              : 'border-border/50 bg-muted/20 opacity-60'}">
+              : 'border-border/50 bg-muted/20'}">
             <!-- Version badge -->
             <div class="flex items-center justify-between">
               <span class="text-xs font-semibold px-2 py-0.5 rounded-full border {meta.bgColor} {meta.textColor} {meta.borderColor}">
                 PHP {ver}
               </span>
-              {#if ver === '8.3' || ver === '8.4'}
+              {#if info?.latest}
                 <span class="text-xs bg-green-400/10 text-green-400 border border-green-400/20 px-1.5 py-0.5 rounded-full font-medium">Latest</span>
               {/if}
             </div>
             <!-- Status -->
             <p class="text-xs text-muted-foreground">
-              {#if installed}
-                <span class="text-foreground font-medium">{count}</span> site{count !== 1 ? 's' : ''}
+              {#if isInstalled}
+                {#if count > 0}
+                  <span class="text-foreground font-medium">{count}</span> site{count !== 1 ? 's' : ''}
+                {:else}
+                  Installed, not in use
+                {/if}
               {:else}
-                Not in use
+                Not installed
               {/if}
             </p>
-            <!-- Status badge -->
-            <span class="text-xs font-medium {installed ? 'text-green-400' : 'text-muted-foreground'}">
-              {installed ? 'Active' : 'Available'}
-            </span>
+            <!-- Action / status -->
+            {#if isInstalled}
+              <span class="text-xs font-medium text-green-400">{count > 0 ? 'In use' : 'Ready'}</span>
+            {:else}
+              <button
+                type="button"
+                class="text-xs font-medium text-left text-indigo-400 hover:text-indigo-300 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+                disabled={!installerAvailable || !!installingVersion}
+                on:click={() => installVersion(ver)}
+                title={installerAvailable ? `Install PHP ${ver}` : 'PHP installer helper is not available on this server'}
+              >
+                {installingVersion === ver ? 'Installing…' : 'Install'}
+              </button>
+            {/if}
           </div>
         {/each}
       </div>

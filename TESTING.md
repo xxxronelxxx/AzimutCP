@@ -50,8 +50,12 @@ sudo ./install-minimal.sh cp.example.com
 ```
 
 The script installs packages, creates the `azimutcp` user and database, writes
-`/etc/azimutcp/panel.env`, starts `azimut-panel` and `azimut-ui`, and configures
-nginx on port 80.
+`/etc/azimutcp/panel.env`, starts `azimut-panel` and `azimut-ui`, configures
+nginx on port 80 and installs **PHP 8.3** with the usual extensions.
+
+Additional PHP versions (7.4–8.4) can be installed later from
+**PHP → PHP Version Management → Install** in the panel: the panel calls
+`/usr/local/sbin/azimut-php-install` through a narrow sudo rule.
 
 At the end it prints:
 

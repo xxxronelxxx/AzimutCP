@@ -1281,6 +1281,16 @@ class AzimutApiClient {
   // ── PHP ──────────────────────────────────────────────────────────────────────
 
   readonly php = {
+    versions: () =>
+      this.request<{
+        versions: Array<{ version: string; installed: boolean; sites: number; latest: boolean }>;
+        default: string;
+        installer_available: boolean;
+      }>('GET', '/api/v1/php/versions'),
+
+    installVersion: (version: string) =>
+      this.request<{ status: string; version: string }>('POST', `/api/v1/php/versions/${version}/install`),
+
     extensions: (siteId: string) =>
       this.request<Array<{ name: string; enabled: boolean; description: string; dev_only: boolean; category: string; special_note?: string }>>('GET', `/api/v1/php/extensions/${siteId}`),
 
