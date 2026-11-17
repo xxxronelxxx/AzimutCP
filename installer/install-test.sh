@@ -82,8 +82,10 @@ mkdir -p "${PANEL_DIR}/bin" "${PANEL_DIR}/ui" "${PANEL_DIR}/apps" \
          "${CONF_DIR}" "${DATA_DIR}" "${LOG_DIR}" "${BACKUP_DIR}"
 
 install -m755 "${ROOT}"/bin/azimut-* "${PANEL_DIR}/bin/"
-[ -f "${ROOT}/bin/azimut" ] && install -m755 "${ROOT}/bin/azimut" "${PANEL_DIR}/bin/azimut"
-ln -sf "${PANEL_DIR}/bin/azimut" /usr/local/bin/azimut
+if [ -f "${ROOT}/bin/azimut" ]; then
+    install -m755 "${ROOT}/bin/azimut" "${PANEL_DIR}/bin/azimut"
+    ln -sf "${PANEL_DIR}/bin/azimut" /usr/local/bin/azimut
+fi
 tar -xzf "${ROOT}/ui/ui.tar.gz" -C "${PANEL_DIR}/ui"
 if [ -d "${ROOT}/apps" ]; then
     cp -r "${ROOT}/apps/." "${PANEL_DIR}/apps/"
@@ -229,8 +231,8 @@ ln -sf /etc/nginx/sites-available/azimutcp /etc/nginx/sites-enabled/azimutcp
 nginx -t >/dev/null
 
 systemctl daemon-reload
-systemctl enable --now azimut-panel >/dev/null 2>&1
-systemctl enable --now azimut-ui >/dev/null 2>&1 || systemctl restart azimut-ui >/dev/null 2>&1
+systemctl enable --now azimut-panel >/dev/null 2>&1 || true
+systemctl enable --now azimut-ui >/dev/null 2>&1 || systemctl restart azimut-ui >/dev/null 2>&1 || true
 systemctl reload nginx
 
 # ── Wait for the panel ────────────────────────────────────────────────────────
