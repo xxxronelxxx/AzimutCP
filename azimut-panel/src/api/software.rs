@@ -371,7 +371,18 @@ async fn list_software(
             "phpmyadmin" | "phppgadmin" | "roundcube"
                 if versions.iter().any(|v| v.installed) =>
             {
-                Some(format!("http://{}.{}/", def.id, state.config.panel_domain))
+                let domain = &state.config.panel_domain;
+                if domain.parse::<std::net::IpAddr>().is_ok() {
+                    let port = match def.id {
+                        "phpmyadmin" => 8081,
+                        "phppgadmin" => 8082,
+                        "roundcube" => 8083,
+                        _ => 80,
+                    };
+                    Some(format!("http://{domain}:{port}/"))
+                } else {
+                    Some(format!("http://{}.{domain}/", def.id))
+                }
             }
             _ => None,
         };
