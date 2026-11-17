@@ -153,6 +153,13 @@ SUDOERS
     }
 fi
 
+# Helpers called by azimut-software (root) — no separate sudo rule needed.
+for helper in azimut-node-install azimut-webapp; do
+    if [ -f "${ROOT}/bin/${helper}" ]; then
+        install -m755 "${ROOT}/bin/${helper}" "/usr/local/sbin/${helper}"
+    fi
+done
+
 log "Installing PHP 8.3…"
 if [ -x /usr/local/sbin/azimut-php-install ]; then
     if ! /usr/local/sbin/azimut-php-install 8.3 >>"${APT_LOG}" 2>&1; then

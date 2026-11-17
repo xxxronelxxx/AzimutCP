@@ -330,24 +330,30 @@ pub async fn setup_nodejs_site(
 }
 
 fn do_setup_nodejs(site_id: &str, unix_user: &str, node_version: &str, port: u16) -> Result<(), Status> {
-    let nvm_dir    = format!("/home/{}/.nvm", unix_user);
-    let nvm_script = format!("{}/nvm.sh", nvm_dir);
+    // Prefer the system-wide nvm managed by the panel; fall back to a per-user nvm.
+    let system_nvm = "/opt/azimutcp/nvm".to_string();
+    let (nvm_dir, use_sudo) = if std::path::Path::new(&format!("{system_nvm}/nvm.sh")).exists() {
+        (system_nvm, false)
+    } else {
+        (format!("/home/{unix_user}/.nvm"), true)
+    };
+    let nvm_script = format!("{nvm_dir}/nvm.sh");
 
-    // nvm must be pre-installed for the user; install the requested version
-    // Source nvm.sh inside a bash -c call (nvm is a bash function, not a binary)
     let install_cmd = format!(
-        "source {} && nvm install {} && nvm use {}",
-        nvm_script, node_version, node_version
+        "export NVM_DIR={} && . {} && nvm install {} && nvm use {}",
+        nvm_dir, nvm_script, node_version, node_version
     );
 
-    let output = std::process::Command::new("sudo")
-        .args([
-            "-u", unix_user,
-            "bash", "--login", "-c",
-            &install_cmd,
-        ])
-        .output()
-        .map_err(|e| Status::internal(format!("nvm install exec failed: {}", e)))?;
+    let output = if use_sudo {
+        std::process::Command::new("sudo")
+            .args(["-u", unix_user, "bash", "--login", "-c", &install_cmd])
+            .output()
+    } else {
+        std::process::Command::new("bash")
+            .args(["--login", "-c", &install_cmd])
+            .output()
+    }
+    .map_err(|e| Status::internal(format!("nvm install exec failed: {}", e)))?;
 
     if !output.status.success() {
         let stderr = String::from_utf8_lossy(&output.stderr);
@@ -358,10 +364,19 @@ fn do_setup_nodejs(site_id: &str, unix_user: &str, node_version: &str, port: u16
         )));
     }
 
-    // Path to the installed node binary under nvm
-    let node_bin = format!(
-        "/home/{unix_user}/.nvm/versions/node/v{node_version}/bin/node"
-    );
+    // `nvm install 20` creates v20.x.y, so resolve the concrete directory.
+    let versions_dir = format!("{nvm_dir}/versions/node");
+    let mut resolved = format!("v{node_version}");
+    if let Ok(entries) = std::fs::read_dir(&versions_dir) {
+        for entry in entries.flatten() {
+            let name = entry.file_name().to_string_lossy().to_string();
+            if name.starts_with(&format!("v{node_version}.")) || name == format!("v{node_version}") {
+                resolved = name;
+                break;
+            }
+        }
+    }
+    let node_bin = format!("{versions_dir}/{resolved}/bin/node");
 
     let unit = format!(
         "[Unit]\n\

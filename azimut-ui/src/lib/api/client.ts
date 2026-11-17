@@ -1288,6 +1288,7 @@ class AzimutApiClient {
         category: string;
         description: string;
         removable: boolean;
+        url: string | null;
         versions: Array<{ version: string; installed: boolean; in_use: number; error: string | null }>;
       }>>('GET', '/api/v1/software'),
 

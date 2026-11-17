@@ -31,7 +31,7 @@ const PHP_VERSIONS: &[&str] = &[
     "8.5", "8.4", "8.3", "8.2", "8.1", "8.0", "7.4", "7.3", "7.2", "7.1", "7.0", "5.6",
 ];
 const PG_VERSIONS: &[&str] = &["17", "16", "15", "14", "13", "12", "11", "10"];
-const NODE_VERSIONS: &[&str] = &["24", "22", "20", "18"];
+const NODE_VERSIONS: &[&str] = &["24", "22", "20", "18", "16"];
 const SINGLE: &[&str] = &["latest"];
 
 const CATALOG: &[ItemDef] = &[
@@ -55,16 +55,16 @@ const CATALOG: &[ItemDef] = &[
         id: "mysql",
         name: "MySQL",
         category: "Databases",
-        description: "MySQL server from the distribution repository.",
-        versions: SINGLE,
+        description: "MySQL 8.4 LTS from the official Oracle APT repository.",
+        versions: &["8.4"],
         removable: true,
     },
     ItemDef {
         id: "mariadb",
         name: "MariaDB",
         category: "Databases",
-        description: "MariaDB server from the distribution repository.",
-        versions: SINGLE,
+        description: "MariaDB 11.x from the official MariaDB repository.",
+        versions: &["11.8", "11.4"],
         removable: true,
     },
     ItemDef {
@@ -95,9 +95,9 @@ const CATALOG: &[ItemDef] = &[
         id: "nodejs",
         name: "Node.js",
         category: "Runtimes",
-        description: "Node.js runtime from NodeSource. Switching versions affects the panel UI.",
+        description: "Node.js runtime installed system-wide via nvm; the panel's own Node.js is untouched.",
         versions: NODE_VERSIONS,
-        removable: false,
+        removable: true,
     },
     ItemDef {
         id: "composer",
@@ -192,6 +192,7 @@ struct SoftwareItem {
     category: String,
     description: String,
     removable: bool,
+    url: Option<String>,
     versions: Vec<VersionStatus>,
 }
 
@@ -246,9 +247,9 @@ struct Ctx {
     php: Vec<String>,
     php_sites: HashMap<String, i64>,
     db_sites: HashMap<String, i64>,
-    node_major: String,
-    mysql: bool,
-    mariadb: bool,
+    node_versions: Vec<String>,
+    mysql_version: String,
+    mariadb_version: String,
 }
 
 impl Ctx {
@@ -277,20 +278,29 @@ impl Ctx {
             .map(|r| (r.db_type, r.count))
             .collect();
 
-        let node_out = command_version("node", "-v");
-        let node_major = node_out
-            .trim()
-            .trim_start_matches('v')
-            .split('.')
-            .next()
-            .unwrap_or("")
-            .to_string();
+        let mut node_versions = Vec::new();
+        if let Ok(entries) = std::fs::read_dir("/opt/azimutcp/nvm/versions/node") {
+            for entry in entries.flatten() {
+                let name = entry.file_name().to_string_lossy().to_string();
+                if let Some(ver) = name.strip_prefix('v') {
+                    if let Some(major) = ver.split('.').next() {
+                        node_versions.push(major.to_string());
+                    }
+                }
+            }
+        }
 
-        let mysqld = command_version("mysqld", "--version").to_lowercase();
-        let mariadb = mysqld.contains("mariadb");
-        let mysql = !mysqld.is_empty() && !mariadb;
+        let mysqld_raw = command_version("mysqld", "--version");
+        let mysqld = mysqld_raw.to_lowercase();
+        let version_re = regex::Regex::new(r"(\d+\.\d+(?:\.\d+)?)").unwrap();
+        let detected = version_re
+            .captures(&mysqld_raw)
+            .map(|c| c[1].to_string())
+            .unwrap_or_default();
+        let mariadb_version = if mysqld.contains("mariadb") { detected.clone() } else { String::new() };
+        let mysql_version = if !mysqld.is_empty() && !mysqld.contains("mariadb") { detected } else { String::new() };
 
-        Ok(Self { php, php_sites, db_sites, node_major, mysql, mariadb })
+        Ok(Self { php, php_sites, db_sites, node_versions, mysql_version, mariadb_version })
     }
 
     fn installed(&self, id: &str, version: &str) -> bool {
@@ -300,12 +310,12 @@ impl Ctx {
                 std::path::Path::new(&format!("/etc/postgresql/{version}")).exists()
                     || std::path::Path::new(&format!("/usr/lib/postgresql/{version}/bin/postgres")).exists()
             }
-            "mysql" => self.mysql,
-            "mariadb" => self.mariadb,
+            "mysql" => self.mysql_version.starts_with(version),
+            "mariadb" => self.mariadb_version.starts_with(version),
             "redis" => bin_exists("redis-server"),
             "valkey" => bin_exists("valkey-server") || bin_exists("redis-server"),
             "memcached" => bin_exists("memcached"),
-            "nodejs" => self.node_major == version,
+            "nodejs" => self.node_versions.iter().any(|v| v == version),
             "composer" => bin_exists("composer"),
             "git" => bin_exists("git"),
             "fail2ban" => bin_exists("fail2ban-client"),
@@ -357,12 +367,22 @@ async fn list_software(
                 error,
             });
         }
+        let web_url = match def.id {
+            "phpmyadmin" | "phppgadmin" | "roundcube"
+                if versions.iter().any(|v| v.installed) =>
+            {
+                Some(format!("http://{}.{}/", def.id, state.config.panel_domain))
+            }
+            _ => None,
+        };
+
         out.push(SoftwareItem {
             id: def.id.to_string(),
             name: def.name.to_string(),
             category: def.category.to_string(),
             description: def.description.to_string(),
             removable: def.removable,
+            url: web_url,
             versions,
         });
     }
@@ -437,6 +457,35 @@ async fn queue_action(
                 return Err(ApiError::Validation(
                     "PostgreSQL still hosts databases; drop or move them before removing the server".into(),
                 ));
+            }
+        }
+        if id == "mysql" || id == "mariadb" {
+            let dbs: i64 = sqlx::query_scalar!(
+                r#"SELECT COUNT(*) AS "count!" FROM databases
+                   WHERE db_type::text IN ('mysql', 'mariadb')"#
+            )
+            .fetch_one(&state.db)
+            .await?;
+            if dbs > 0 {
+                return Err(ApiError::Validation(
+                    "The database server still hosts databases; drop them before removing it".into(),
+                ));
+            }
+        }
+        if id == "nodejs" {
+            let prefix = format!("{version}%");
+            let sites: i64 = sqlx::query_scalar!(
+                r#"SELECT COUNT(*) AS "count!" FROM sites
+                   WHERE runtime = 'nodejs' AND runtime_version LIKE $1
+                     AND deleted_at IS NULL"#,
+                prefix
+            )
+            .fetch_one(&state.db)
+            .await?;
+            if sites > 0 {
+                return Err(ApiError::Validation(format!(
+                    "Node.js {version} is used by {sites} site(s); switch them first"
+                )));
             }
         }
     }

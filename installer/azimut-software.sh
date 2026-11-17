@@ -94,15 +94,41 @@ case "${ID}" in
 
     mysql)
         if [ "${ACTION}" = "install" ]; then
-            apt_install mysql-server
+            if dpkg -s mariadb-server >/dev/null 2>&1; then
+                echo "MariaDB is already installed; remove it before installing MySQL" >&2
+                exit 4
+            fi
+            . /etc/os-release
+            case "${ID:-}" in
+                ubuntu|debian) repo="${ID}" ;;
+                *) echo "unsupported distribution for MySQL: ${ID:-unknown}" >&2; exit 3 ;;
+            esac
+            apt-get install -y -qq curl ca-certificates gnupg
+            install -d -m755 /usr/share/keyrings
+            curl -fsSL https://repo.mysql.com/RPM-GPG-KEY-mysql-2023                 | gpg --dearmor -o /usr/share/keyrings/mysql.gpg
+            echo "deb [signed-by=/usr/share/keyrings/mysql.gpg] http://repo.mysql.com/apt/${repo}/ ${VERSION_CODENAME} mysql-8.4-lts"                 > /etc/apt/sources.list.d/mysql.list
+            apt_update
+            apt_install mysql-community-server
+            systemctl enable --now mysql >/dev/null 2>&1 || true
         else
-            apt_remove mysql-server
+            apt_remove mysql-community-server
         fi
         ;;
 
     mariadb)
         if [ "${ACTION}" = "install" ]; then
+            if dpkg -s mysql-community-server >/dev/null 2>&1; then
+                echo "MySQL is already installed; remove it before installing MariaDB" >&2
+                exit 4
+            fi
+            if [[ ! "${VER}" =~ ^11\.[0-9]+$ ]]; then
+                echo "only MariaDB 11.x is supported" >&2
+                exit 2
+            fi
+            curl -LsS https://r.mariadb.com/downloads/mariadb_repo_setup                 | bash -s -- --mariadb-server-version="${VER}"
+            apt_update
             apt_install mariadb-server
+            systemctl enable --now mariadb >/dev/null 2>&1 || true
         else
             apt_remove mariadb-server
         fi
@@ -135,22 +161,15 @@ case "${ID}" in
         ;;
 
     nodejs)
-        if [[ ! "${VER}" =~ ^[0-9]{2}$ ]]; then
+        if [[ ! "${VER}" =~ ^[0-9]{1,2}$ ]]; then
             echo "invalid Node.js major version" >&2
             exit 2
         fi
-        if [ "${ACTION}" = "install" ]; then
-            current=$(node -v 2>/dev/null | sed 's/^v//' | cut -d. -f1 || true)
-            if [ "${current}" = "${VER}" ]; then
-                log "Node.js ${VER} is already installed"
-                exit 0
-            fi
-            curl -fsSL "https://deb.nodesource.com/setup_${VER}.x" | bash - >/dev/null
-            apt_install nodejs
-        else
-            echo "The system Node.js is used by the panel UI and cannot be removed" >&2
-            exit 4
+        if [ ! -x /usr/local/sbin/azimut-node-install ]; then
+            echo "Node.js installer helper is missing" >&2
+            exit 3
         fi
+        /usr/local/sbin/azimut-node-install "${ACTION}" "${VER}"
         ;;
 
     composer|git|fail2ban|jpegoptim|memcached|spamassassin)
@@ -175,7 +194,9 @@ case "${ID}" in
             echo "phpmyadmin phpmyadmin/dbconfig-install boolean false" | debconf-set-selections
             echo "phpmyadmin phpmyadmin/reconfigure-webserver multiselect" | debconf-set-selections
             apt_install phpmyadmin
+            [ -x /usr/local/sbin/azimut-webapp ] && /usr/local/sbin/azimut-webapp phpmyadmin || true
         else
+            [ -x /usr/local/sbin/azimut-webapp ] && /usr/local/sbin/azimut-webapp remove phpmyadmin || true
             apt_remove phpmyadmin
         fi
         ;;
@@ -183,7 +204,9 @@ case "${ID}" in
     phppgadmin)
         if [ "${ACTION}" = "install" ]; then
             apt_install phppgadmin
+            [ -x /usr/local/sbin/azimut-webapp ] && /usr/local/sbin/azimut-webapp phppgadmin || true
         else
+            [ -x /usr/local/sbin/azimut-webapp ] && /usr/local/sbin/azimut-webapp remove phppgadmin || true
             apt_remove phppgadmin
         fi
         ;;
@@ -193,7 +216,9 @@ case "${ID}" in
             echo "roundcube-core roundcube/dbconfig-install boolean false" | debconf-set-selections
             echo "roundcube-core roundcube/reconfigure-webserver multiselect" | debconf-set-selections
             apt_install roundcube
+            [ -x /usr/local/sbin/azimut-webapp ] && /usr/local/sbin/azimut-webapp roundcube || true
         else
+            [ -x /usr/local/sbin/azimut-webapp ] && /usr/local/sbin/azimut-webapp remove roundcube || true
             apt_remove roundcube
         fi
         ;;

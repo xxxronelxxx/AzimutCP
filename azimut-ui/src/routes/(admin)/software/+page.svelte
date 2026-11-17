@@ -17,6 +17,7 @@
     category: string;
     description: string;
     removable: boolean;
+    url: string | null;
     versions: VersionStatus[];
   };
 
@@ -156,6 +157,12 @@
               <div>
                 <h3 class="text-sm font-semibold text-foreground">{item.name}</h3>
                 <p class="text-xs text-muted-foreground mt-0.5">{item.description}</p>
+                {#if item.url}
+                  <a href={item.url} target="_blank" rel="noopener"
+                     class="text-xs text-indigo-400 hover:text-indigo-300 mt-1 inline-block">
+                    {$t('software.open')} ↗
+                  </a>
+                {/if}
               </div>
 
               <div class="space-y-1.5">

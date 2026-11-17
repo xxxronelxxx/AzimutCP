@@ -108,7 +108,8 @@
       "security": "Security",
       "web_tools": "Web tools",
       "mail": "Mail"
-    }
+    },
+    "open": "Open"
   },
   "sites": {
     "title": "Websites",
