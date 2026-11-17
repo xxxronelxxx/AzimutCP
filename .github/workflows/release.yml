@@ -1,0 +1,98 @@
+name: Release
+
+on:
+  push:
+    tags: ["v*"]
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    name: Build linux-x86_64 bundle
+    runs-on: ubuntu-22.04
+    services:
+      postgres:
+        image: postgres:17
+        env:
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: postgres
+          POSTGRES_DB: azimutcp
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U postgres"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 20
+    env:
+      DATABASE_URL: postgres://postgres:postgres@127.0.0.1:5432/azimutcp
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install system dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y protobuf-compiler libssl-dev pkg-config
+
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+      - uses: taiki-e/install-action@v2
+        with:
+          tool: sqlx-cli@0.8
+
+      - name: Apply migrations
+        run: sqlx migrate run --source azimut-panel/migrations
+
+      - name: Build daemons
+        run: cargo build --release --workspace
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: azimut-ui/package-lock.json
+
+      - name: Build UI
+        working-directory: azimut-ui
+        run: |
+          npm ci --no-audit --no-fund
+          npm run build
+
+      - name: Package bundle
+        run: |
+          set -euo pipefail
+          mkdir -p dist bundle/bin bundle/ui bundle/apps bundle/scripts
+
+          for b in panel agent dns mail cron cli mcp; do
+            install -m755 "target/release/azimut-$b" "dist/azimut-$b-linux-x86_64"
+            install -m755 "target/release/azimut-$b" "bundle/bin/azimut-$b"
+          done
+
+          tar -czf dist/azimut-ui.tar.gz -C azimut-ui build package.json package-lock.json
+          tar -czf dist/azimut-apps.tar.gz -C azimut-panel apps
+
+          tar -czf bundle/ui/ui.tar.gz -C azimut-ui build package.json package-lock.json
+          cp -r azimut-panel/apps/. bundle/apps/
+          cp -r scripts/. bundle/scripts/
+          cp installer/install-test.sh bundle/install-test.sh
+          chmod +x bundle/install-test.sh
+
+          tar -czf dist/azimutcp-linux-x86_64.tar.gz -C bundle .
+          cp installer/install-test.sh dist/install-test.sh
+
+          (cd dist && sha256sum * > SHA256SUMS)
+          ls -lh dist
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: azimutcp-linux-x86_64
+          path: dist/*
+
+      - name: Publish GitHub release
+        if: startsWith(github.ref, 'refs/tags/')
+        uses: softprops/action-gh-release@v2
+        with:
+          files: dist/*
+          generate_release_notes: true
