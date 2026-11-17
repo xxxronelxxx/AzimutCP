@@ -42,6 +42,7 @@
       items: [
         { href: '/backups',     label: 'Backups',   icon: 'cloud-up'  },
         { href: '/apps',        label: 'Apps',      icon: 'grid'      },
+        { href: '/software',    label: 'Server Software', icon: 'server' },
         { href: '/cron',        label: 'Cron',      icon: 'clock'     },
         { href: '/php',         label: 'PHP',       icon: 'code'      },
         { href: '/cache',       label: 'Cache',     icon: 'zap'       },

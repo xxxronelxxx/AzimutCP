@@ -173,6 +173,16 @@
       if (data.admin_email) settings.panel_email = String(data.admin_email);
       if (data.default_web_server)
         settings.default_webserver = String(data.default_web_server) as typeof settings.default_webserver;
+      if (data.company_name) settings.company_name = String(data.company_name);
+      if (data.timezone) settings.timezone = String(data.timezone);
+      if (data.default_php) settings.default_php = String(data.default_php);
+      if (data.language) settings.language = String(data.language);
+      if (data.date_format) settings.date_format = String(data.date_format);
+      const b = await api.branding.get().catch(() => null);
+      if (b) {
+        branding.panel_name = b.panel_name ?? 'AzimutCP';
+        branding.primary_color = b.primary_color ?? '#6366f1';
+      }
       if (lic) {
         license.tier = lic.tier;
         license.domain = lic.domain ?? '';
@@ -358,6 +368,11 @@
         body: JSON.stringify({
           admin_email: settings.panel_email,
           default_web_server: settings.default_webserver,
+          company_name: settings.company_name,
+          timezone: settings.timezone,
+          default_php: settings.default_php,
+          language: settings.language,
+          date_format: settings.date_format,
         }),
       });
       if (!r.ok) throw new Error(`HTTP ${r.status}`);
@@ -366,6 +381,21 @@
       showToast('Failed to save settings', 'error');
     } finally {
       generalLoading = false;
+    }
+  }
+
+  async function saveBranding() {
+    brandingLoading = true;
+    try {
+      await api.branding.update({
+        panel_name: branding.panel_name,
+        primary_color: branding.primary_color,
+      });
+      showToast('Branding saved', 'success');
+    } catch {
+      showToast('Failed to save branding', 'error');
+    } finally {
+      brandingLoading = false;
     }
   }
 
@@ -1023,13 +1053,7 @@
 
           <button
             disabled={brandingLoading}
-            on:click={() => {
-              brandingLoading = true;
-              setTimeout(() => {
-                brandingLoading = false;
-                showToast('Branding saved', 'success');
-              }, 800);
-            }}
+            on:click={saveBranding}
             class="h-9 px-4 rounded-lg bg-primary text-primary-foreground text-sm font-medium hover:bg-primary/90 inline-flex items-center gap-2 transition-all duration-150 active:scale-95 disabled:opacity-50"
           >
             {brandingLoading ? 'Saving...' : 'Save Branding'}

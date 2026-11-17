@@ -7,13 +7,13 @@
 # Ondřej Surý / Sury package repository when needed and installs the usual
 # extension set.
 #
-# Usage: azimut-php-install <7.4|8.0|8.1|8.2|8.3|8.4>
+# Usage: azimut-php-install <5.6|7.0-7.4|8.0-8.5>
 # =============================================================================
 set -euo pipefail
 
 PHP_VERSION="${1:-}"
-if [[ ! "${PHP_VERSION}" =~ ^[78]\.[0-9]$ ]]; then
-    echo "usage: azimut-php-install <7.4|8.0|8.1|8.2|8.3|8.4>" >&2
+if [[ ! "${PHP_VERSION}" =~ ^[578]\.[0-9]$ ]]; then
+    echo "usage: azimut-php-install <5.6|7.0-7.4|8.0-8.5>" >&2
     exit 2
 fi
 

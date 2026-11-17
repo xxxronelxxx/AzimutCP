@@ -127,6 +127,19 @@ SUDOERS
     }
 fi
 
+# Root helper used by the panel to install server software (databases, caches, tools).
+if [ -f "${ROOT}/bin/azimut-software" ]; then
+    install -m755 "${ROOT}/bin/azimut-software" /usr/local/sbin/azimut-software
+    cat > /etc/sudoers.d/azimutcp-software <<'SUDOERS'
+azimutcp ALL=(root) NOPASSWD: /usr/local/sbin/azimut-software *
+SUDOERS
+    chmod 440 /etc/sudoers.d/azimutcp-software
+    visudo -cf /etc/sudoers.d/azimutcp-software >/dev/null 2>&1 || {
+        rm -f /etc/sudoers.d/azimutcp-software
+        warn "Could not validate the software installer sudo rule — in-panel installs are disabled"
+    }
+fi
+
 log "Installing PHP 8.3…"
 if [ -x /usr/local/sbin/azimut-php-install ]; then
     if ! /usr/local/sbin/azimut-php-install 8.3 >>"${APT_LOG}" 2>&1; then

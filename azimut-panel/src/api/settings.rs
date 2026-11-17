@@ -29,6 +29,11 @@ pub struct PanelSettings {
     pub default_web_server: String,  // "ols" | "nginx" | "apache"
     pub maintenance_mode:   bool,
     pub registration_open:  bool,
+    pub company_name:       String,
+    pub timezone:           String,
+    pub default_php:        String,
+    pub language:           String,
+    pub date_format:        String,
     pub version:            String,
 }
 
@@ -40,6 +45,11 @@ pub struct UpdateSettingsRequest {
     pub default_web_server: Option<String>,
     pub maintenance_mode:   Option<bool>,
     pub registration_open:  Option<bool>,
+    pub company_name:       Option<String>,
+    pub timezone:           Option<String>,
+    pub default_php:        Option<String>,
+    pub language:           Option<String>,
+    pub date_format:        Option<String>,
 }
 
 #[derive(Debug, Serialize)]
@@ -123,6 +133,11 @@ async fn get_settings(
         .unwrap_or(true);
     let default_ws = get_db_setting(&state, "default_web_server").await
         .unwrap_or_else(|| "ols".into());
+    let company_name = get_db_setting(&state, "company_name").await.unwrap_or_default();
+    let timezone = get_db_setting(&state, "timezone").await.unwrap_or_else(|| "UTC".into());
+    let default_php = get_db_setting(&state, "default_php").await.unwrap_or_else(|| "8.3".into());
+    let language = get_db_setting(&state, "language").await.unwrap_or_else(|| "en".into());
+    let date_format = get_db_setting(&state, "date_format").await.unwrap_or_else(|| "MM/DD/YYYY".into());
 
     Ok(Json(PanelSettings {
         panel_domain:       state.config.panel_domain.clone(),
@@ -134,6 +149,11 @@ async fn get_settings(
         default_web_server: default_ws,
         maintenance_mode:   maintenance,
         registration_open:  registration,
+        company_name,
+        timezone,
+        default_php,
+        language,
+        date_format,
         version:            env!("CARGO_PKG_VERSION").into(),
     }))
 }
@@ -179,6 +199,41 @@ async fn update_settings(
 
     if let Some(reg) = req.registration_open {
         set_db_setting(&state, "registration_open", if reg { "true" } else { "false" }).await?;
+    }
+
+    if let Some(ref company) = req.company_name {
+        if company.len() > 128 {
+            return Err(ApiError::Validation("company_name is too long".into()));
+        }
+        set_db_setting(&state, "company_name", company).await?;
+    }
+
+    if let Some(ref tz) = req.timezone {
+        if tz.is_empty() || tz.len() > 64 || tz.contains(' ') {
+            return Err(ApiError::Validation("Invalid timezone".into()));
+        }
+        set_db_setting(&state, "timezone", tz).await?;
+    }
+
+    if let Some(ref php) = req.default_php {
+        if !regex::Regex::new(r"^[578]\.[0-9]$").unwrap().is_match(php) {
+            return Err(ApiError::Validation("Invalid default_php version".into()));
+        }
+        set_db_setting(&state, "default_php", php).await?;
+    }
+
+    if let Some(ref lang) = req.language {
+        if lang.len() > 8 {
+            return Err(ApiError::Validation("Invalid language".into()));
+        }
+        set_db_setting(&state, "language", lang).await?;
+    }
+
+    if let Some(ref fmt) = req.date_format {
+        if fmt.len() > 32 {
+            return Err(ApiError::Validation("Invalid date_format".into()));
+        }
+        set_db_setting(&state, "date_format", fmt).await?;
     }
 
     tracing::info!(admin = %claims.sub, "panel settings updated");

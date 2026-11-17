@@ -1278,6 +1278,41 @@ class AzimutApiClient {
     },
   };
 
+  // ── Server software catalog ─────────────────────────────────────────────────
+
+  readonly software = {
+    list: () =>
+      this.request<Array<{
+        id: string;
+        name: string;
+        category: string;
+        description: string;
+        removable: boolean;
+        versions: Array<{ version: string; installed: boolean; in_use: number; error: string | null }>;
+      }>>('GET', '/api/v1/software'),
+
+    install: (id: string, version: string) =>
+      this.request<{ status: string }>('POST', `/api/v1/software/${id}/install`, { version }),
+
+    uninstall: (id: string, version: string) =>
+      this.request<{ status: string }>('POST', `/api/v1/software/${id}/uninstall`, { version }),
+  };
+
+  // ── Branding ────────────────────────────────────────────────────────────────
+
+  readonly branding = {
+    get: () =>
+      this.request<{
+        panel_name: string | null;
+        primary_color: string | null;
+        logo_url: string | null;
+        support_url: string | null;
+      }>('GET', '/api/v1/branding'),
+
+    update: (payload: { panel_name?: string; primary_color?: string; support_url?: string }) =>
+      this.request<unknown>('PUT', '/api/v1/branding', payload),
+  };
+
   // ── PHP ──────────────────────────────────────────────────────────────────────
 
   readonly php = {

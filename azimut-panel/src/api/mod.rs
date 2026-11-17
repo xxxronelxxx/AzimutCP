@@ -27,6 +27,7 @@ pub mod servers;
 pub mod settings;
 pub mod sites;
 pub mod ssh_keys;
+pub mod software;
 pub mod ssl;
 pub mod staging;
 pub mod users;

@@ -33,7 +33,7 @@ fn validate_unix_user(user: &str) -> anyhow::Result<()> {
 pub fn validate_unix_user_pub(user: &str) -> anyhow::Result<()> { validate_unix_user(user) }
 
 fn validate_php_version(version: &str) -> anyhow::Result<()> {
-    let re = regex::Regex::new(r"^[78]\.[0-9]+$").unwrap();
+    let re = regex::Regex::new(r"^[578]\.[0-9]+$").unwrap();
     anyhow::ensure!(re.is_match(version), "Invalid PHP version: {}", version);
     Ok(())
 }

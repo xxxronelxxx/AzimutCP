@@ -87,6 +87,8 @@ async fn process_next_job(state: &Arc<AppState>) -> anyhow::Result<bool> {
         "unsuspend_site"     => dispatch_unsuspend_site(state, &job).await,
         "change_php_version" => dispatch_change_php_version(state, &job).await,
         "install_php_version" => dispatch_install_php_version(state, &job).await,
+        "install_software" => dispatch_software(state, &job, true).await,
+        "uninstall_software" => dispatch_software(state, &job, false).await,
         "backup_site"        => dispatch_backup_site(state, &job).await,
         "run_backup"         => dispatch_backup_site(state, &job).await,
         "restore_backup"     => dispatch_restore_backup(state, &job).await,
@@ -354,6 +356,83 @@ async fn clear_php_install_error(state: &Arc<AppState>, version: &str) {
     let mut conn = state.valkey.clone();
     let _: Result<(), _> = redis::cmd("DEL")
         .arg(format!("azimut:php:install_error:{version}"))
+        .query_async(&mut conn)
+        .await;
+}
+
+async fn dispatch_software(state: &Arc<AppState>, job: &serde_json::Value, install: bool) {
+    let id = job["id"].as_str().unwrap_or("").to_string();
+    let version = job["version"].as_str().unwrap_or("").to_string();
+
+    let id_ok = regex::Regex::new(r"^[a-z0-9-]{2,32}$").unwrap().is_match(&id);
+    let ver_ok = regex::Regex::new(r"^[A-Za-z0-9._-]{1,16}$").unwrap().is_match(&version);
+    if !id_ok || !ver_ok {
+        tracing::error!(job = %job, "software job: invalid id/version");
+        return;
+    }
+
+    let helper = "/usr/local/sbin/azimut-software";
+    if !std::path::Path::new(helper).exists() {
+        tracing::error!(software = %id, "software helper not found");
+        clear_software_lock(state, &id, &version).await;
+        return;
+    }
+
+    let action = if install { "install" } else { "remove" };
+    tracing::info!(software = %id, version = %version, action, "Running software operation");
+
+    let result = tokio::process::Command::new("sudo")
+        .args(["-n", helper, action, &id, &version])
+        .output()
+        .await;
+
+    match result {
+        Ok(out) if out.status.success() => {
+            tracing::info!(software = %id, version = %version, action, "Software operation finished");
+            clear_software_error(state, &id, &version).await;
+        }
+        Ok(out) => {
+            let stderr = String::from_utf8_lossy(&out.stderr);
+            tracing::error!(
+                software = %id, version = %version, code = ?out.status.code(),
+                stderr = %stderr, "Software operation failed"
+            );
+            let tail: String = stderr.chars().rev().take(800).collect::<String>()
+                .chars().rev().collect();
+            set_software_error(state, &id, &version, &tail).await;
+        }
+        Err(e) => {
+            tracing::error!(software = %id, error = %e, "Failed to start software helper");
+            set_software_error(state, &id, &version, &e.to_string()).await;
+        }
+    }
+
+    clear_software_lock(state, &id, &version).await;
+}
+
+async fn set_software_error(state: &Arc<AppState>, id: &str, version: &str, message: &str) {
+    let mut conn = state.valkey.clone();
+    let _: Result<(), _> = redis::cmd("SET")
+        .arg(format!("azimut:software:error:{id}:{version}"))
+        .arg(message)
+        .arg("EX")
+        .arg(3600)
+        .query_async(&mut conn)
+        .await;
+}
+
+async fn clear_software_error(state: &Arc<AppState>, id: &str, version: &str) {
+    let mut conn = state.valkey.clone();
+    let _: Result<(), _> = redis::cmd("DEL")
+        .arg(format!("azimut:software:error:{id}:{version}"))
+        .query_async(&mut conn)
+        .await;
+}
+
+async fn clear_software_lock(state: &Arc<AppState>, id: &str, version: &str) {
+    let mut conn = state.valkey.clone();
+    let _: Result<(), _> = redis::cmd("DEL")
+        .arg(format!("azimut:software:lock:{id}:{version}"))
         .query_async(&mut conn)
         .await;
 }

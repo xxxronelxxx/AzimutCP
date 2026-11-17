@@ -168,12 +168,12 @@ pub fn router() -> Router<Arc<AppState>> {
 // ── PHP versions ──────────────────────────────────────────────────────────────
 
 /// Versions the panel knows how to install (Ondřej Surý packages).
-const KNOWN_PHP_VERSIONS: &[&str] = &["8.4", "8.3", "8.2", "8.1", "8.0", "7.4"];
+const KNOWN_PHP_VERSIONS: &[&str] = &["8.5", "8.4", "8.3", "8.2", "8.1", "8.0", "7.4", "7.3", "7.2", "7.1", "7.0", "5.6"];
 
 const PHP_INSTALL_HELPER: &str = "/usr/local/sbin/azimut-php-install";
 
 fn valid_php_version(version: &str) -> bool {
-    regex::Regex::new(r"^[78]\.[0-9]$").unwrap().is_match(version)
+    regex::Regex::new(r"^[578]\.[0-9]$").unwrap().is_match(version)
 }
 
 /// Detect PHP-FPM versions actually installed on this server.
@@ -645,7 +645,7 @@ async fn change_php_version(
 ) -> ApiResult<StatusCode> {
     let (user_id, is_admin) = caller(&claims)?;
 
-    if !regex::Regex::new(r"^[78]\.[0-9]+$").unwrap().is_match(&req.php_version) {
+    if !regex::Regex::new(r"^[578]\.[0-9]+$").unwrap().is_match(&req.php_version) {
         return Err(ApiError::Validation(format!("Invalid PHP version: {}", req.php_version)));
     }
 

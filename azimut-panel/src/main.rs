@@ -189,6 +189,7 @@ async fn main() -> anyhow::Result<()> {
         .merge(api::users::router())
         .merge(api::notifications::router())
         .merge(api::settings::router())
+        .merge(api::software::router())
         .merge(api::branding::router())
         // WordPress WP-CLI management
         .merge(api::wordpress::router())
