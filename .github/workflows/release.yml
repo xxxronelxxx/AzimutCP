@@ -77,10 +77,11 @@ jobs:
           cp -r azimut-panel/apps/. bundle/apps/
           cp -r scripts/. bundle/scripts/
           cp installer/install-test.sh bundle/install-test.sh
+          cp TESTING.md bundle/TESTING.md
+          cp LICENSE NOTICE bundle/
           chmod +x bundle/install-test.sh
 
           tar -czf dist/azimutcp-linux-x86_64.tar.gz -C bundle .
-          cp installer/install-test.sh dist/install-test.sh
 
           (cd dist && sha256sum * > SHA256SUMS)
           ls -lh dist

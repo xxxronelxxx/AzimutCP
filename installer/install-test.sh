@@ -67,6 +67,12 @@ fi
 systemctl enable --now postgresql >/dev/null 2>&1 || systemctl start postgresql
 systemctl enable --now redis-server >/dev/null 2>&1 || systemctl start redis-server
 
+# nginx must own port 80 on a fresh test box
+if systemctl is-active --quiet apache2 2>/dev/null; then
+    warn "Stopping apache2 so nginx can bind port 80"
+    systemctl disable --now apache2 >/dev/null 2>&1 || true
+fi
+
 # ── System user and directories ───────────────────────────────────────────────
 if ! id "${SVC_USER}" >/dev/null 2>&1; then
     useradd --system --create-home --home-dir "${PANEL_DIR}" --shell /usr/sbin/nologin "${SVC_USER}"
@@ -222,8 +228,7 @@ nginx -t >/dev/null
 
 systemctl daemon-reload
 systemctl enable --now azimut-panel >/dev/null 2>&1
-systemctl restart azimut-ui >/dev/null 2>&1 || systemctl enable --now azimut-ui >/dev/null 2>&1
-systemctl enable --now azimut-ui >/dev/null 2>&1 || true
+systemctl enable --now azimut-ui >/dev/null 2>&1 || systemctl restart azimut-ui >/dev/null 2>&1
 systemctl reload nginx
 
 # ── Wait for the panel ────────────────────────────────────────────────────────
