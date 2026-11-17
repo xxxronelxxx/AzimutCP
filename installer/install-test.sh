@@ -56,13 +56,19 @@ apt-get install -y -qq \
     redis-server nginx \
     >/dev/null
 
-# Node.js 20+ (SvelteKit adapter-node)
-NODE_MAJOR="$(node -v 2>/dev/null | sed 's/^v//' | cut -d. -f1 || true)"
-if [ -z "${NODE_MAJOR}" ] || [ "${NODE_MAJOR}" -lt 18 ]; then
+# Node.js 20+ (SvelteKit adapter-node). We require /usr/bin/node explicitly
+# because systemd units reference that path.
+NODE_OK=0
+if [ -x /usr/bin/node ] && [ -x /usr/bin/npm ]; then
+    NODE_MAJOR="$(/usr/bin/node -v 2>/dev/null | sed 's/^v//' | cut -d. -f1 || echo 0)"
+    [ "${NODE_MAJOR:-0}" -ge 18 ] 2>/dev/null && NODE_OK=1
+fi
+if [ "${NODE_OK}" -ne 1 ]; then
     log "Installing Node.js 20 from NodeSource…"
     curl -fsSL https://deb.nodesource.com/setup_20.x | bash - >/dev/null
     apt-get install -y -qq nodejs >/dev/null
 fi
+[ -x /usr/bin/node ] || die "node was not installed correctly"
 
 systemctl enable --now postgresql >/dev/null 2>&1 || systemctl start postgresql
 systemctl enable --now redis-server >/dev/null 2>&1 || systemctl start redis-server

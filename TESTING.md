@@ -9,7 +9,13 @@ production server.
 
 ## 1. Get the build
 
-Download the latest release bundle from GitHub:
+Fastest path — one command (downloads the latest release automatically):
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/xxxronelxxx/AzimutCP/main/install.sh | sudo bash
+```
+
+Manual path — download the bundle yourself:
 
 <https://github.com/xxxronelxxx/AzimutCP/releases>
 

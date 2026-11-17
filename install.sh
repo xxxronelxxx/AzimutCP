@@ -1,234 +1,143 @@
 #!/usr/bin/env bash
-# ============================================================
-# AzimutCP — One-Command Installer
-# https://github.com/xxxronelxxx/AzimutCP
-# ============================================================
+# =============================================================================
+# AzimutCP — one-command installer
+#
+#   curl -fsSL https://raw.githubusercontent.com/xxxronelxxx/AzimutCP/main/install.sh | sudo bash
+#
+# Downloads the latest release bundle from GitHub and runs its installer.
+# Supported: Ubuntu 22.04/24.04, Debian 12, x86_64, fresh server.
+#
+# Options:
+#   --version <tag|latest>   release to install (default: latest)
+#   --help
+#
+# Environment (mostly for development):
+#   AZIMUT_VERSION      same as --version
+#   AZIMUT_BUNDLE_URL   override the bundle download URL
+#   AZIMUT_FETCH_ONLY=1 download and unpack, do not run the installer
+# =============================================================================
 set -euo pipefail
 
-RED='\033[0;31m'; GREEN='\033[0;32m'; YELLOW='\033[1;33m'
-BLUE='\033[0;34m'; BOLD='\033[1m'; NC='\033[0m'
+REPO="xxxronelxxx/AzimutCP"
+BUNDLE_NAME="azimutcp-linux-x86_64.tar.gz"
 
-log()  { echo -e "${GREEN}[AzimutCP]${NC} $*"; }
-warn() { echo -e "${YELLOW}[WARN]${NC} $*"; }
-err()  { echo -e "${RED}[ERROR]${NC} $*"; exit 1; }
+RED='\033[0;31m'; GREEN='\033[0;32m'; YELLOW='\033[1;33m'; BLUE='\033[0;34m'; NC='\033[0m'
+log()  { echo -e "${GREEN}[azimut]${NC} $*"; }
+warn() { echo -e "${YELLOW}[warn]${NC} $*"; }
+die()  { echo -e "${RED}[error]${NC} $*" >&2; exit 1; }
 
-AZIMUTCP_VERSION="0.1.0"
-INSTALL_DIR="/opt/azimutcp"
-DATA_DIR="/var/lib/azimutcp"
-BACKUP_DIR="/var/backups/azimutcp"
-LOG_DIR="/var/log/azimutcp"
+usage() {
+    cat <<'EOF'
+AzimutCP installer
 
-banner() {
-cat << 'BANNER'
-  ___       _     _ _  ____  ____
- / _ \ _ __| |__ (_) |/ ___||  _ \
-| | | | '__| '_ \| | | |    | |_) |
-| |_| | |  | |_) | | | |___ |  __/
- \___/|_|  |_.__/|_|_|\____||_|
-BANNER
-echo -e "${BLUE}AzimutCP v${AZIMUTCP_VERSION} — Rust-Powered Web Hosting Panel${NC}"
-echo -e "${YELLOW}https://github.com/xxxronelxxx/AzimutCP${NC}"
-echo ""
-}
+  sudo ./install.sh [panel-domain-or-ip]
+  curl -fsSL <raw-install.sh> | sudo bash -s -- [panel-domain-or-ip]
 
-check_root() {
-  [ "$(id -u)" -eq 0 ] || err "Run as root: sudo bash install.sh"
-}
-
-check_os() {
-  . /etc/os-release 2>/dev/null || err "Cannot detect OS"
-  case "$ID" in
-    ubuntu) [[ "$VERSION_ID" =~ ^(22|24) ]] || warn "Ubuntu 22.04/24.04 recommended" ;;
-    debian) [[ "$VERSION_ID" =~ ^(11|12) ]] || warn "Debian 11/12 recommended" ;;
-    *) warn "Untested OS: $ID $VERSION_ID — proceeding anyway" ;;
-  esac
-  log "OS: $PRETTY_NAME"
-}
-
-install_deps() {
-  log "Installing system dependencies..."
-  apt-get update -qq
-  apt-get install -y -qq \
-    curl wget git build-essential pkg-config \
-    libssl-dev libpq-dev \
-    postgresql postgresql-client \
-    redis-server \
-    nginx \
-    certbot python3-certbot-nginx \
-    nftables \
-    ca-certificates gnupg lsb-release 2>&1 | tail -5
-  log "Dependencies installed"
-}
-
-install_rust() {
-  if command -v cargo &>/dev/null; then
-    log "Rust already installed: $(cargo --version)"
-    return
-  fi
-  log "Installing Rust..."
-  curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh -s -- -y --default-toolchain stable
-  source "$HOME/.cargo/env"
-  log "Rust installed: $(cargo --version)"
-}
-
-setup_database() {
-  log "Setting up PostgreSQL database..."
-  local DB_PASS
-  DB_PASS=$(openssl rand -base64 24 | tr -dc 'a-zA-Z0-9' | head -c 24)
-
-  systemctl start postgresql
-  systemctl enable postgresql
-
-  sudo -u postgres psql -c "CREATE USER azimutcp WITH PASSWORD '${DB_PASS}';" 2>/dev/null || true
-  sudo -u postgres psql -c "CREATE DATABASE azimutcp OWNER azimutcp;" 2>/dev/null || true
-  sudo -u postgres psql -c "GRANT ALL PRIVILEGES ON DATABASE azimutcp TO azimutcp;" 2>/dev/null || true
-
-  echo "DATABASE_URL=postgresql://azimutcp:${DB_PASS}@127.0.0.1:5432/azimutcp"
-}
-
-setup_valkey() {
-  log "Configuring Redis/Valkey..."
-  systemctl start redis-server 2>/dev/null || systemctl start redis 2>/dev/null || true
-  systemctl enable redis-server 2>/dev/null || systemctl enable redis 2>/dev/null || true
-}
-
-build_azimutcp() {
-  log "Building AzimutCP from source..."
-  source "$HOME/.cargo/env" 2>/dev/null || true
-
-  [ -d "${INSTALL_DIR}" ] || git clone https://github.com/xxxronelxxx/AzimutCP.git "${INSTALL_DIR}"
-  cd "${INSTALL_DIR}"
-  cargo build --release --workspace 2>&1 | tail -10
-  log "Build complete"
-}
-
-setup_env() {
-  local DB_URL="$1"
-  local PDNS_KEY
-  PDNS_KEY=$(openssl rand -hex 16)
-  local INTERNAL_TOKEN
-  INTERNAL_TOKEN=$(openssl rand -hex 32)
-  local ADMIN_PASS
-  ADMIN_PASS=$(openssl rand -base64 24 | tr -dc 'A-Za-z0-9' | head -c 20)
-
-  cat > "${INSTALL_DIR}/.env" << EOF
-DATABASE_URL=${DB_URL}
-VALKEY_URL=redis://127.0.0.1:6379
-PANEL_PORT=2087
-PANEL_DOMAIN=${DOMAIN:-localhost}
-ALLOWED_ORIGINS=https://${DOMAIN:-localhost}
-AZIMUT_ENV=community
-ADMIN_EMAIL=admin@${DOMAIN:-localhost}
-AZIMUT_ADMIN_EMAIL=admin@${DOMAIN:-localhost}
-AZIMUT_ADMIN_PASSWORD=${ADMIN_PASS}
-AZIMUT_APPS_DIR=${INSTALL_DIR}/apps
-PDNS_API_URL=http://127.0.0.1:8081
-PDNS_API_KEY=${PDNS_KEY}
-AZIMUT_INTERNAL_TOKEN=${INTERNAL_TOKEN}
+Options:
+  --version <tag|latest>   release tag to install (default: latest)
+  --help                   show this help
 EOF
-  chmod 600 "${INSTALL_DIR}/.env"
-  log "Environment configured (secrets auto-generated)"
 }
 
-setup_systemd() {
-  log "Installing systemd services..."
+VERSION="${AZIMUT_VERSION:-latest}"
+DOMAIN=""
 
-  cat > /etc/systemd/system/azimut-panel.service << 'SVC'
-[Unit]
-Description=AzimutCP Panel API
-After=network.target postgresql.service redis.service
-Requires=postgresql.service
+while [ $# -gt 0 ]; do
+    case "$1" in
+        --version)
+            [ $# -ge 2 ] || die "--version requires a value"
+            VERSION="$2"; shift 2 ;;
+        --version=*)
+            VERSION="${1#*=}"; shift ;;
+        -h|--help)
+            usage; exit 0 ;;
+        --)
+            shift; break ;;
+        -*)
+            die "unknown option: $1" ;;
+        *)
+            DOMAIN="$1"; shift ;;
+    esac
+done
 
-[Service]
-Type=exec
-User=azimutcp
-WorkingDirectory=/opt/azimutcp
-EnvironmentFile=/opt/azimutcp/.env
-ExecStart=/opt/azimutcp/target/release/azimut-panel
-Restart=on-failure
-RestartSec=5
-LimitNOFILE=65536
+FETCH_ONLY="${AZIMUT_FETCH_ONLY:-0}"
 
-[Install]
-WantedBy=multi-user.target
-SVC
+if [ "${FETCH_ONLY}" != "1" ]; then
+    [ "$(id -u)" -eq 0 ] || die "Run as root: curl -fsSL ... | sudo bash"
+fi
 
-  systemctl daemon-reload
-  systemctl enable azimut-panel
-}
+ARCH="$(uname -m)"
+case "${ARCH}" in
+    x86_64|amd64) ;;
+    *) die "unsupported architecture '${ARCH}' — only x86_64 builds are published" ;;
+esac
 
-setup_nginx() {
-  local DOMAIN="${1:-localhost}"
-  log "Configuring nginx for domain: ${DOMAIN}..."
+# ── Base tools ────────────────────────────────────────────────────────────────
+need_pkg=0
+for c in curl tar sha256sum; do
+    command -v "$c" >/dev/null 2>&1 || need_pkg=1
+done
+if [ "${need_pkg}" -eq 1 ]; then
+    log "Installing base tools…"
+    if command -v apt-get >/dev/null 2>&1; then
+        export DEBIAN_FRONTEND=noninteractive
+        apt-get update -qq
+        apt-get install -y -qq curl ca-certificates tar coreutils >/dev/null
+    elif command -v dnf >/dev/null 2>&1; then
+        dnf install -y -q curl ca-certificates tar coreutils >/dev/null
+    else
+        die "cannot install curl/tar — install them manually and re-run"
+    fi
+fi
 
-  cat > /etc/nginx/sites-available/azimutcp << EOF
-server {
-    listen 80;
-    server_name ${DOMAIN};
+# ── Resolve download URLs ─────────────────────────────────────────────────────
+if [ "${VERSION}" = "latest" ]; then
+    BASE_URL="https://github.com/${REPO}/releases/latest/download"
+else
+    BASE_URL="https://github.com/${REPO}/releases/download/${VERSION}"
+fi
 
-    location /api/ {
-        proxy_pass http://127.0.0.1:2087;
-        proxy_set_header Host \$host;
-        proxy_set_header X-Real-IP \$remote_addr;
-        proxy_set_header X-Forwarded-For \$proxy_add_x_forwarded_for;
-        proxy_set_header X-Forwarded-Proto \$scheme;
-    }
+BUNDLE_URL="${AZIMUT_BUNDLE_URL:-${BASE_URL}/${BUNDLE_NAME}}"
+SUMS_URL="${BASE_URL}/SHA256SUMS"
 
-    location / {
-        proxy_pass http://127.0.0.1:3000;
-        proxy_set_header Host \$host;
-        proxy_set_header X-Real-IP \$remote_addr;
-        proxy_http_version 1.1;
-        proxy_set_header Upgrade \$http_upgrade;
-        proxy_set_header Connection "upgrade";
-    }
-}
-EOF
-  ln -sf /etc/nginx/sites-available/azimutcp /etc/nginx/sites-enabled/azimutcp
-  nginx -t && systemctl reload nginx
-}
+log "AzimutCP ${VERSION} (${ARCH})"
+log "Downloading ${BUNDLE_NAME}…"
 
-print_success() {
-  echo ""
-  echo -e "${GREEN}${BOLD}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${NC}"
-  echo -e "${GREEN}${BOLD}  ✅  AzimutCP Installation Complete!${NC}"
-  echo -e "${GREEN}${BOLD}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${NC}"
-  echo ""
-  echo -e "  Panel URL:   ${BLUE}http://${DOMAIN:-localhost}${NC}"
-  echo -e "  Email:       ${BLUE}$(grep '^AZIMUT_ADMIN_EMAIL=' "${INSTALL_DIR}/.env" 2>/dev/null | cut -d= -f2-)${NC}"
-  echo -e "  Password:    ${BLUE}$(grep '^AZIMUT_ADMIN_PASSWORD=' "${INSTALL_DIR}/.env" 2>/dev/null | cut -d= -f2-)${NC}"
-  echo -e "  First login: ${YELLOW}change the password after signing in${NC}"
-  echo -e "  Logs:        ${BLUE}journalctl -u azimut-panel -f${NC}"
-  echo -e "  Docs:        ${BLUE}https://github.com/xxxronelxxx/AzimutCP#documentation${NC}"
-  echo ""
-  echo -e "  ${GREEN}Community edition — AGPL-3.0. Source: https://github.com/xxxronelxxx/AzimutCP${NC}"
-  echo ""
-}
+TMP_DIR="$(mktemp -d /tmp/azimutcp-install.XXXXXX)"
+cleanup() { rm -rf "${TMP_DIR}"; }
+trap cleanup EXIT
 
-main() {
-  banner
-  check_root
-  check_os
+curl -fL --progress-bar "${BUNDLE_URL}" -o "${TMP_DIR}/${BUNDLE_NAME}" \
+    || die "download failed: ${BUNDLE_URL}"
 
-  DOMAIN="${1:-}"
+# Verify the bundle when a checksum file is available and was not overridden.
+if [ -z "${AZIMUT_BUNDLE_URL:-}" ] && curl -fsL "${SUMS_URL}" -o "${TMP_DIR}/SHA256SUMS"; then
+    if command -v sha256sum >/dev/null 2>&1; then
+        ( cd "${TMP_DIR}" && sha256sum -c --ignore-missing SHA256SUMS >/dev/null 2>&1 ) \
+            || die "checksum verification failed — refusing to install"
+        log "Checksum verified."
+    fi
+else
+    warn "SHA256SUMS not available — skipping checksum verification"
+fi
 
-  install_deps
-  install_rust
-  DB_URL=$(setup_database)
-  setup_valkey
-  build_azimutcp
-  setup_env "$DB_URL"
-  setup_systemd
+log "Unpacking…"
+mkdir -p "${TMP_DIR}/bundle"
+tar -xzf "${TMP_DIR}/${BUNDLE_NAME}" -C "${TMP_DIR}/bundle"
+[ -f "${TMP_DIR}/bundle/install-test.sh" ] || die "invalid bundle: install-test.sh missing"
+chmod +x "${TMP_DIR}/bundle/install-test.sh"
 
-  [ -n "$DOMAIN" ] && setup_nginx "$DOMAIN"
+if [ "${FETCH_ONLY}" = "1" ]; then
+    log "AZIMUT_FETCH_ONLY=1 — bundle unpacked at ${TMP_DIR}/bundle (kept for inspection)"
+    trap - EXIT
+    exit 0
+fi
 
-  mkdir -p "${DATA_DIR}" "${BACKUP_DIR}" "${LOG_DIR}"
-  useradd -r -s /bin/false azimutcp 2>/dev/null || true
-  chown -R azimutcp:azimutcp "${INSTALL_DIR}" "${DATA_DIR}" "${BACKUP_DIR}" "${LOG_DIR}"
+log "Starting installation…"
+echo
 
-  systemctl start azimut-panel
-
-  print_success
-}
-
-main "$@"
+if [ -n "${DOMAIN}" ]; then
+    "${TMP_DIR}/bundle/install-test.sh" "${DOMAIN}"
+else
+    "${TMP_DIR}/bundle/install-test.sh"
+fi

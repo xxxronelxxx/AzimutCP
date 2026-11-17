@@ -65,24 +65,31 @@ Daemons: `azimut-panel` · `azimut-agent` · `azimut-dns` · `azimut-mail` · `a
 - PostgreSQL 15+, Valkey or Redis 7+
 - Rust 1.80+ (when building from source), Node.js 20+ for the UI
 
-## Install
+## Install (one command)
 
-One command (builds from source on a fresh server):
-
-```bash
-curl -sSL https://raw.githubusercontent.com/xxxronelxxx/AzimutCP/main/install.sh | sudo bash
-```
-
-With a panel domain:
+Fresh Ubuntu 22.04 / 24.04 or Debian 12, x86_64, as root:
 
 ```bash
-curl -sSL https://raw.githubusercontent.com/xxxronelxxx/AzimutCP/main/install.sh | sudo bash -s -- cp.example.com
+curl -fsSL https://raw.githubusercontent.com/xxxronelxxx/AzimutCP/main/install.sh | sudo bash
 ```
 
-The extended installer with PowerDNS, mail stack, OpenLiteSpeed, cgroups and
-CIS hardening is available as `installer/install.sh`. Prebuilt binaries and
-signed releases are not published yet, so source builds are the supported path
-for now.
+With a panel address (domain or IP):
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/xxxronelxxx/AzimutCP/main/install.sh | sudo bash -s -- cp.example.com
+```
+
+The installer downloads the latest release bundle, verifies its SHA-256
+checksum and sets up the panel API, the UI, PostgreSQL, Valkey, nginx and
+systemd units. Credentials for the initial admin account are printed at the
+end.
+
+This is the **minimal test install**: mail, PowerDNS, Apache/OLS, quotas and
+cgroups are not configured yet. See [TESTING.md](TESTING.md) for details and
+troubleshooting.
+
+A source build (no prebuilt bundle) is available as
+`installer/install-from-source.sh`.
 
 ## Build from source
 
