@@ -131,7 +131,11 @@ log "Installing PHP 8.3…"
 if [ -x /usr/local/sbin/azimut-php-install ]; then
     if ! /usr/local/sbin/azimut-php-install 8.3 >>"${APT_LOG}" 2>&1; then
         tail -n 40 "${APT_LOG}" >&2
-        warn "PHP 8.3 installation failed — you can retry from the PHP page in the panel"
+        warn "PHP 8.3 unavailable (package repo issue) — installing the distribution default PHP instead"
+        apt_run install -y -qq \
+            php-fpm php-cli php-common php-mysql php-pgsql php-gd \
+            php-mbstring php-xml php-curl php-zip php-intl php-bcmath php-opcache
+        systemctl enable --now 'php*-fpm' >/dev/null 2>&1 || true
     fi
 else
     warn "PHP installer helper is missing from the bundle — PHP was not installed"

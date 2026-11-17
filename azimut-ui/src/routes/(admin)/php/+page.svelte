@@ -52,7 +52,7 @@
   $: activeVerCount = versionSiteCount[activeVer] ?? 0;
 
   // Installed PHP versions (server-side, not just "used by a site")
-  type PhpVersion = { version: string; installed: boolean; sites: number; latest: boolean };
+  type PhpVersion = { version: string; installed: boolean; sites: number; latest: boolean; error?: string | null };
   let phpVersions: PhpVersion[] = [];
   let installerAvailable = true;
   let installingVersion = '';
@@ -228,10 +228,20 @@
     try {
       await api.php.installVersion(version);
       // Installing packages takes a while; poll until it shows up.
+      let done = false;
       for (let attempt = 0; attempt < 36; attempt++) {
         await new Promise((resolve) => setTimeout(resolve, 5000));
         await loadPhpVersions();
-        if (phpVersions.some(v => v.version === version && v.installed)) break;
+        if (phpVersions.some(v => v.version === version && v.installed)) {
+          done = true;
+          break;
+        }
+        const failed = phpVersions.find(v => v.version === version)?.error;
+        if (failed) break;
+      }
+      if (!done) {
+        const failed = phpVersions.find(v => v.version === version)?.error;
+        versionError = failed ?? `PHP ${version} was not installed in time — check the panel logs.`;
       }
     } catch (err: unknown) {
       const e = err as { message?: string; error?: string };
@@ -600,6 +610,9 @@
               >
                 {installingVersion === ver ? 'Installing…' : 'Install'}
               </button>
+            {/if}
+            {#if info?.error && !isInstalled}
+              <p class="text-[10px] leading-tight text-red-400 line-clamp-2" title={info.error}>{info.error}</p>
             {/if}
           </div>
         {/each}

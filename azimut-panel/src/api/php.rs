@@ -177,7 +177,7 @@ fn valid_php_version(version: &str) -> bool {
 }
 
 /// Detect PHP-FPM versions actually installed on this server.
-fn detect_installed_php_versions() -> Vec<String> {
+pub(crate) fn detect_installed_php_versions() -> Vec<String> {
     let mut found = Vec::new();
     if let Ok(entries) = std::fs::read_dir("/etc/php") {
         for entry in entries.flatten() {
@@ -237,17 +237,22 @@ async fn list_php_versions(
     });
 
     let latest = installed.first().cloned();
-    let list: Vec<serde_json::Value> = versions
-        .iter()
-        .map(|v| {
-            serde_json::json!({
-                "version":   v,
-                "installed": installed.iter().any(|i| i == v),
-                "sites":     counts.get(v).copied().unwrap_or(0),
-                "latest":    latest.as_deref() == Some(v.as_str()),
-            })
-        })
-        .collect();
+    let mut list: Vec<serde_json::Value> = Vec::new();
+    let mut conn = state.valkey.clone();
+    for v in &versions {
+        let error: Option<String> = redis::cmd("GET")
+            .arg(format!("azimut:php:install_error:{v}"))
+            .query_async(&mut conn)
+            .await
+            .unwrap_or(None);
+        list.push(serde_json::json!({
+            "version":   v,
+            "installed": installed.iter().any(|i| i == v),
+            "sites":     counts.get(v).copied().unwrap_or(0),
+            "latest":    latest.as_deref() == Some(v.as_str()),
+            "error":     error,
+        }));
+    }
 
     Ok(Json(serde_json::json!({
         "versions": list,

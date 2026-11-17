@@ -35,8 +35,14 @@ if ! apt-cache show "php${VERSION}-fpm" >/dev/null 2>&1; then
         ubuntu)
             log "Adding ppa:ondrej/php…"
             apt-get install -y -qq software-properties-common ca-certificates
-            add-apt-repository -y ppa:ondrej/php >/dev/null
-            apt-get update -qq
+            for attempt in 1 2 3; do
+                if add-apt-repository -y ppa:ondrej/php >/dev/null 2>&1 \
+                   && apt-get update -qq >/dev/null 2>&1; then
+                    break
+                fi
+                log "Launchpad unavailable (attempt ${attempt}/3), retrying…"
+                sleep 5
+            done
             ;;
         debian)
             log "Adding packages.sury.org…"

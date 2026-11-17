@@ -316,21 +316,46 @@ async fn dispatch_install_php_version(state: &Arc<AppState>, job: &serde_json::V
     match result {
         Ok(out) if out.status.success() => {
             tracing::info!(version = %version, "PHP version installed");
+            clear_php_install_error(state, &version).await;
         }
         Ok(out) => {
+            let stderr = String::from_utf8_lossy(&out.stderr);
             tracing::error!(
                 version = %version,
                 code = ?out.status.code(),
-                stderr = %String::from_utf8_lossy(&out.stderr),
+                stderr = %stderr,
                 "PHP version installation failed"
             );
+            let tail: String = stderr.chars().rev().take(800).collect::<String>()
+                .chars().rev().collect();
+            set_php_install_error(state, &version, &tail).await;
         }
         Err(e) => {
             tracing::error!(version = %version, error = %e, "Failed to start PHP installation helper");
+            set_php_install_error(state, &version, &e.to_string()).await;
         }
     }
 
     clear_php_install_lock(state, &version).await;
+}
+
+async fn set_php_install_error(state: &Arc<AppState>, version: &str, message: &str) {
+    let mut conn = state.valkey.clone();
+    let _: Result<(), _> = redis::cmd("SET")
+        .arg(format!("azimut:php:install_error:{version}"))
+        .arg(message)
+        .arg("EX")
+        .arg(3600)
+        .query_async(&mut conn)
+        .await;
+}
+
+async fn clear_php_install_error(state: &Arc<AppState>, version: &str) {
+    let mut conn = state.valkey.clone();
+    let _: Result<(), _> = redis::cmd("DEL")
+        .arg(format!("azimut:php:install_error:{version}"))
+        .query_async(&mut conn)
+        .await;
 }
 
 async fn clear_php_install_lock(state: &Arc<AppState>, version: &str) {

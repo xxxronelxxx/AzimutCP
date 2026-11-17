@@ -227,6 +227,18 @@ async fn create_site(
         return Err(ApiError::Validation(format!("'{}' is not a valid domain name", domain)));
     }
 
+    // Refuse to provision with a PHP version that is not installed locally —
+    // otherwise the job fails much later with a confusing error.
+    if req.server_id.is_none() {
+        let installed = crate::api::php::detect_installed_php_versions();
+        if !installed.is_empty() && !installed.iter().any(|v| v == &req.php_version) {
+            return Err(ApiError::Validation(format!(
+                "PHP {} is not installed on this server. Install it on the PHP page first.",
+                req.php_version
+            )));
+        }
+    }
+
     let existing = sqlx::query!(
         "SELECT id FROM sites WHERE domain = $1 AND deleted_at IS NULL",
         domain
