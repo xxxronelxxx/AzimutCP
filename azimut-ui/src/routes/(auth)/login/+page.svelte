@@ -2,6 +2,8 @@
   import { goto } from '$app/navigation';
   import { auth } from '$stores/auth';
   import { onMount } from 'svelte';
+  import { get } from 'svelte/store';
+  import { t } from '$lib/i18n';
   import { page } from '$app/stores';
   import AzimutIcon from '$lib/components/ui/AzimutIcon.svelte';
 
@@ -24,7 +26,7 @@
   onMount(() => {
     const reason = $page.url.searchParams.get('reason');
     if (reason === 'session_expired') {
-      sessionExpiredMsg = 'Your session has expired. Please sign in again.';
+      sessionExpiredMsg = get(t)('auth.session_expired');
     }
     // Initialize auth from storage to detect if already logged in
     auth.init();
@@ -91,7 +93,7 @@
     } catch (err: unknown) {
       const e = err as { message?: string; error?: string };
       errorMessage = e.error === 'invalid_totp'
-        ? 'Invalid code. Please check your authenticator app and try again.'
+        ? get(t)('auth.invalid_totp')
         : e.message ?? 'Verification failed. Please try again.';
       totpCode = '';
       totpInput?.focus();
@@ -116,7 +118,7 @@
     } catch (err: unknown) {
       const e = err as { message?: string; error?: string };
       errorMessage = e.error === 'invalid_totp'
-        ? 'Invalid backup code. Please check and try again.'
+        ? get(t)('auth.invalid_backup')
         : e.message ?? 'Verification failed.';
       backupCode = '';
       backupInput?.focus();
@@ -172,7 +174,7 @@
         <AzimutIcon size={32} className="text-white" />
       </div>
       <h1 class="text-2xl font-bold text-foreground">AzimutCP</h1>
-      <p class="text-muted-foreground text-sm mt-1">Server Control Panel</p>
+      <p class="text-muted-foreground text-sm mt-1">{$t('auth.server_control_panel')}</p>
     </div>
 
     <!-- Session expired warning -->
@@ -194,9 +196,9 @@
       {#if step === 'credentials'}
         <!-- ── Step 1: Email + Password ────────────────────────────────── -->
         <div class="mb-6">
-          <h2 class="text-lg font-semibold text-foreground">Sign in</h2>
+          <h2 class="text-lg font-semibold text-foreground">{$t('auth.sign_in_title')}</h2>
           <p class="text-sm text-muted-foreground mt-1">
-            Enter your credentials to continue.
+            {$t('auth.sign_in_hint')}
           </p>
         </div>
 
@@ -206,7 +208,7 @@
             <!-- Email -->
             <div>
               <label for="email" class="block text-sm font-medium text-foreground mb-1.5">
-                Email address
+                {$t('auth.email')}
               </label>
               <input
                 bind:this={emailInput}
@@ -232,12 +234,8 @@
             <div>
               <div class="flex items-center justify-between mb-1.5">
                 <label for="password" class="text-sm font-medium text-foreground">
-                  Password
+                  {$t('auth.password')}
                 </label>
-                <a href="/forgot-password"
-                   class="text-xs text-indigo-600 dark:text-indigo-400 hover:underline font-medium">
-                  Forgot password?
-                </a>
               </div>
               <div class="relative">
                 <input
@@ -256,7 +254,7 @@
                 <button
                   type="button"
                   on:click={() => showPassword = !showPassword}
-                  aria-label={showPassword ? 'Hide password' : 'Show password'}
+                  aria-label={showPassword ? $t('auth.hide_password') : $t('auth.show_password')}
                   class="absolute right-3 top-1/2 -translate-y-1/2 text-muted-foreground
                          hover:text-foreground transition-colors"
                 >
@@ -314,10 +312,10 @@
                     <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4" />
                     <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z" />
                   </svg>
-                  Signing in...
+                  {$t('auth.signing_in')}
                 </span>
               {:else}
-                Continue
+                {$t('auth.continue')}
               {/if}
             </button>
 
@@ -327,9 +325,9 @@
       {:else if step === 'totp'}
         <!-- ── Step 2: TOTP ────────────────────────────────────────────── -->
         <div class="mb-6">
-          <h2 class="text-lg font-semibold text-foreground">Two-factor verification</h2>
+          <h2 class="text-lg font-semibold text-foreground">{$t('auth.totp_title')}</h2>
           <p class="text-sm text-muted-foreground mt-1">
-            Open your authenticator app and enter the 6-digit code for AzimutCP.
+            {$t('auth.totp_hint')}
           </p>
         </div>
 
@@ -361,7 +359,7 @@
                 aria-describedby="totp-help"
               />
               <p id="totp-help" class="text-xs text-muted-foreground mt-1.5">
-                The code changes every 30 seconds.
+                {$t('auth.totp_help')}
               </p>
             </div>
 
@@ -395,10 +393,10 @@
                     <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4" />
                     <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z" />
                   </svg>
-                  Verifying...
+                  {$t('auth.verifying')}
                 </span>
               {:else}
-                Verify &amp; Sign In
+                {$t('auth.verify')}
               {/if}
             </button>
 
@@ -409,14 +407,14 @@
                 on:click={goBackToCredentials}
                 class="text-muted-foreground hover:text-foreground transition-colors"
               >
-                ← Back
+                {$t('auth.back')}
               </button>
               <button
                 type="button"
                 on:click={goToBackupCode}
                 class="text-muted-foreground hover:text-foreground transition-colors text-xs"
               >
-                Lost your authenticator?
+                {$t('auth.forgot_totp')}
               </button>
             </div>
 
@@ -426,9 +424,9 @@
       {:else}
         <!-- ── Step 3: Backup code ─────────────────────────────────────── -->
         <div class="mb-6">
-          <h2 class="text-lg font-semibold text-foreground">Use a backup code</h2>
+          <h2 class="text-lg font-semibold text-foreground">{$t('auth.backup_title')}</h2>
           <p class="text-sm text-muted-foreground mt-1">
-            Enter one of your 12-character backup codes to sign in.
+            {$t('auth.backup_hint')}
           </p>
         </div>
 
@@ -458,7 +456,7 @@
                        disabled:opacity-50 disabled:cursor-not-allowed transition-colors uppercase"
               />
               <p class="text-xs text-muted-foreground mt-1.5">
-                Each backup code can only be used once.
+                {$t('auth.backup_help')}
               </p>
             </div>
 
@@ -491,10 +489,10 @@
                     <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4" />
                     <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z" />
                   </svg>
-                  Verifying...
+                  {$t('auth.verifying')}
                 </span>
               {:else}
-                Sign In with Backup Code
+                {$t('auth.backup_sign_in')}
               {/if}
             </button>
 
@@ -504,14 +502,14 @@
                 on:click={goBackToCredentials}
                 class="text-muted-foreground hover:text-foreground transition-colors"
               >
-                ← Back
+                {$t('auth.back')}
               </button>
               <button
                 type="button"
                 on:click={goToTotp}
                 class="text-muted-foreground hover:text-foreground transition-colors text-xs"
               >
-                Use authenticator instead
+                {$t('auth.use_authenticator')}
               </button>
             </div>
 

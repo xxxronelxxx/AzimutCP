@@ -127,6 +127,19 @@ SUDOERS
     }
 fi
 
+# Root helper for installing PHP extension packages per version.
+if [ -f "${ROOT}/bin/azimut-php-module" ]; then
+    install -m755 "${ROOT}/bin/azimut-php-module" /usr/local/sbin/azimut-php-module
+    cat > /etc/sudoers.d/azimutcp-php-module <<'SUDOERS'
+azimutcp ALL=(root) NOPASSWD: /usr/local/sbin/azimut-php-module *
+SUDOERS
+    chmod 440 /etc/sudoers.d/azimutcp-php-module
+    visudo -cf /etc/sudoers.d/azimutcp-php-module >/dev/null 2>&1 || {
+        rm -f /etc/sudoers.d/azimutcp-php-module
+        warn "Could not validate the PHP module sudo rule — in-panel module installs are disabled"
+    }
+fi
+
 # Root helper used by the panel to install server software (databases, caches, tools).
 if [ -f "${ROOT}/bin/azimut-software" ]; then
     install -m755 "${ROOT}/bin/azimut-software" /usr/local/sbin/azimut-software

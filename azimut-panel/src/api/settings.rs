@@ -136,7 +136,7 @@ async fn get_settings(
     let company_name = get_db_setting(&state, "company_name").await.unwrap_or_default();
     let timezone = get_db_setting(&state, "timezone").await.unwrap_or_else(|| "UTC".into());
     let default_php = get_db_setting(&state, "default_php").await.unwrap_or_else(|| "8.3".into());
-    let language = get_db_setting(&state, "language").await.unwrap_or_else(|| "en".into());
+    let language = get_db_setting(&state, "language").await.unwrap_or_else(|| "ru".into());
     let date_format = get_db_setting(&state, "date_format").await.unwrap_or_else(|| "MM/DD/YYYY".into());
 
     Ok(Json(PanelSettings {

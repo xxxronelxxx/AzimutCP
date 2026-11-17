@@ -76,6 +76,7 @@ jobs:
 
           # Root helper for installing PHP versions from the panel.
           install -m755 installer/azimut-php-install.sh bundle/bin/azimut-php-install
+          install -m755 installer/azimut-php-module.sh bundle/bin/azimut-php-module
           install -m755 installer/azimut-software.sh bundle/bin/azimut-software
 
           tar -czf dist/azimut-ui.tar.gz -C azimut-ui build package.json package-lock.json

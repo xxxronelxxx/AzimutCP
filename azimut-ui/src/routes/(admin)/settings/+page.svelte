@@ -16,7 +16,7 @@
     timezone: 'UTC',
     default_php: '8.3',
     default_webserver: 'nginx' as 'nginx' | 'apache' | 'ols',
-    language: 'en',
+    language: 'ru',
     date_format: 'MM/DD/YYYY',
   };
   let generalLoading = false;

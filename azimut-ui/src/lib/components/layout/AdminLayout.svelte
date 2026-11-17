@@ -8,7 +8,7 @@
   import { onMount } from 'svelte';
   import { api } from '$api/client';
   import type { Notification } from '$api/client';
-  import { currentLang, setLanguage } from '$lib/i18n';
+  import { currentLang, setLanguage, t } from '$lib/i18n';
 
   // ── Page content fade-up on navigation ───────────────────────────────────────
   let contentKey = 0;
@@ -18,59 +18,59 @@
   // ── Navigation groups ─────────────────────────────────────────────────────
   const navGroups = [
     {
-      label: 'Overview',
+      label: 'navGroups.overview',
       color: 'text-blue-500',
       items: [
-        { href: '/dashboard',   label: 'Dashboard', icon: 'home'      },
-        { href: '/websites',    label: 'Websites',  icon: 'globe'     },
-        { href: '/servers',     label: 'Servers',   icon: 'server'    },
+        { href: '/dashboard',   label: 'nav.dashboard', icon: 'home'      },
+        { href: '/websites',    label: 'nav.websites',  icon: 'globe'     },
+        { href: '/servers',     label: 'nav.servers',   icon: 'server'    },
       ],
     },
     {
-      label: 'Hosting',
+      label: 'navGroups.hosting',
       color: 'text-emerald-500',
       items: [
-        { href: '/databases',   label: 'Databases', icon: 'database'  },
-        { href: '/email',       label: 'Email',     icon: 'mail'      },
-        { href: '/dns',         label: 'DNS',       icon: 'globe2'    },
-        { href: '/ssl',         label: 'SSL',       icon: 'lock'      },
-        { href: '/filemanager', label: 'Files',     icon: 'folder'    },
+        { href: '/databases',   label: 'nav.databases', icon: 'database'  },
+        { href: '/email',       label: 'nav.email',     icon: 'mail'      },
+        { href: '/dns',         label: 'nav.dns',       icon: 'globe2'    },
+        { href: '/ssl',         label: 'nav.ssl',       icon: 'lock'      },
+        { href: '/filemanager', label: 'nav.files',     icon: 'folder'    },
       ],
     },
     {
-      label: 'Tools',
+      label: 'navGroups.tools',
       color: 'text-violet-500',
       items: [
-        { href: '/backups',     label: 'Backups',   icon: 'cloud-up'  },
-        { href: '/apps',        label: 'Apps',      icon: 'grid'      },
-        { href: '/software',    label: 'Server Software', icon: 'server' },
-        { href: '/cron',        label: 'Cron',      icon: 'clock'     },
-        { href: '/php',         label: 'PHP',       icon: 'code'      },
-        { href: '/cache',       label: 'Cache',     icon: 'zap'       },
-        { href: '/webhooks',    label: 'Webhooks',  icon: 'webhook'   },
-        { href: '/cloudflare',  label: 'Cloudflare',icon: 'cloud'     },
-        { href: '/migration',   label: 'Migration', icon: 'import'    },
-        { href: '/plugins',     label: 'Plugins',   icon: 'puzzle'    },
+        { href: '/backups',     label: 'nav.backups',   icon: 'cloud-up'  },
+        { href: '/apps',        label: 'nav.apps',      icon: 'grid'      },
+        { href: '/software',    label: 'nav.software', icon: 'server' },
+        { href: '/cron',        label: 'nav.cron',      icon: 'clock'     },
+        { href: '/php',         label: 'nav.php',       icon: 'code'      },
+        { href: '/cache',       label: 'nav.cache',     icon: 'zap'       },
+        { href: '/webhooks',    label: 'nav.webhooks',  icon: 'webhook'   },
+        { href: '/cloudflare',  label: 'nav.cloudflare',icon: 'cloud'     },
+        { href: '/migration',   label: 'nav.migration', icon: 'import'    },
+        { href: '/plugins',     label: 'nav.plugins',   icon: 'puzzle'    },
       ],
     },
     {
-      label: 'Security',
+      label: 'navGroups.security',
       color: 'text-rose-500',
       items: [
-        { href: '/security',    label: 'Security',  icon: 'shield'    },
-        { href: '/firewall',    label: 'Firewall',  icon: 'shield-lock'},
+        { href: '/security',    label: 'nav.security',  icon: 'shield'    },
+        { href: '/firewall',    label: 'nav.firewall',  icon: 'shield-lock'},
       ],
     },
     {
-      label: 'System',
+      label: 'navGroups.system',
       color: 'text-slate-400',
       items: [
-        { href: '/logs',        label: 'Logs',      icon: 'doc-text'  },
-        { href: '/audit-log',   label: 'Audit Log', icon: 'audit'     },
-        { href: '/dbmanager',   label: 'DB Manager',icon: 'table'     },
-        { href: '/users',       label: 'Users',     icon: 'users'     },
-        { href: '/reseller',    label: 'Reseller',  icon: 'briefcase' },
-        { href: '/settings',    label: 'Settings',  icon: 'cog'       },
+        { href: '/logs',        label: 'nav.logs',      icon: 'doc-text'  },
+        { href: '/audit-log',   label: 'nav.audit_log', icon: 'audit'     },
+        { href: '/dbmanager',   label: 'nav.dbmanager',icon: 'table'     },
+        { href: '/users',       label: 'nav.users',     icon: 'users'     },
+        { href: '/reseller',    label: 'nav.reseller',  icon: 'briefcase' },
+        { href: '/settings',    label: 'nav.settings',  icon: 'cog'       },
       ],
     },
   ] as const;
@@ -231,7 +231,7 @@
     >
       {#each navGroups as group}
         <p class="px-3 py-1 text-[10px] font-semibold uppercase tracking-widest mt-4 mb-1 first:mt-0 flex items-center gap-1.5 {group.color}">
-          {group.label}
+          {$t(group.label)}
         </p>
         {#each group.items as item}
           <a
@@ -253,7 +253,7 @@
             >
               <path stroke-linecap="round" stroke-linejoin="round" d={icon(item.icon)} />
             </svg>
-            <span>{item.label}</span>
+            <span>{$t(item.label)}</span>
           </a>
         {/each}
       {/each}
@@ -293,11 +293,8 @@
                  text-muted-foreground focus:outline-none focus:ring-1 focus:ring-primary"
           aria-label="Select language"
         >
+          <option value="ru">RU</option>
           <option value="en">EN</option>
-          <option value="ar">AR</option>
-          <option value="fr">FR</option>
-          <option value="es">ES</option>
-          <option value="zh-CN">ZH</option>
         </select>
       </div>
 

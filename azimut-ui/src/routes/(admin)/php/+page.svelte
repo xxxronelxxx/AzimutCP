@@ -58,6 +58,13 @@
   let installingVersion = '';
   let versionError = '';
 
+  // System PHP modules for an installed version
+  let modulesVersion = '';
+  let phpModules: Array<{ id: string; label: string; installed: boolean }> = [];
+  let modulesLoading = false;
+  let moduleBusy = '';
+  let moduleError = '';
+
   // Version comparison table
   let showVersionCompare = false;
 
@@ -248,6 +255,49 @@
       versionError = e.message ?? e.error ?? `Failed to install PHP ${version}`;
     } finally {
       installingVersion = '';
+    }
+  }
+
+  // ── PHP modules ────────────────────────────────────────────────────────────
+
+  async function openModules(version: string) {
+    modulesVersion = version;
+    modulesLoading = true;
+    moduleError = '';
+    phpModules = [];
+    try {
+      const res = await api.php.modules(version);
+      phpModules = res.modules;
+    } catch (err: unknown) {
+      const e = err as { message?: string; error?: string };
+      moduleError = e.message ?? e.error ?? 'Не удалось загрузить модули PHP';
+    } finally {
+      modulesLoading = false;
+    }
+  }
+
+  async function toggleModule(mod: { id: string; label: string; installed: boolean }) {
+    if (moduleBusy) return;
+    moduleBusy = mod.id;
+    moduleError = '';
+    try {
+      if (mod.installed) {
+        await api.php.uninstallModule(modulesVersion, mod.id);
+      } else {
+        await api.php.installModule(modulesVersion, mod.id);
+      }
+      for (let attempt = 0; attempt < 24; attempt++) {
+        await new Promise((resolve) => setTimeout(resolve, 5000));
+        const res = await api.php.modules(modulesVersion);
+        phpModules = res.modules;
+        const now = phpModules.find(m => m.id === mod.id)?.installed ?? false;
+        if (now !== mod.installed) break;
+      }
+    } catch (err: unknown) {
+      const e = err as { message?: string; error?: string };
+      moduleError = e.message ?? e.error ?? 'Не удалось изменить модуль';
+    } finally {
+      moduleBusy = '';
     }
   }
 
@@ -599,7 +649,16 @@
             </p>
             <!-- Action / status -->
             {#if isInstalled}
-              <span class="text-xs font-medium text-green-400">{count > 0 ? 'In use' : 'Ready'}</span>
+              <div class="flex items-center justify-between gap-2">
+                <span class="text-xs font-medium text-green-400">{count > 0 ? 'In use' : 'Ready'}</span>
+                <button
+                  type="button"
+                  class="text-xs text-indigo-400 hover:text-indigo-300 transition-colors"
+                  on:click={() => openModules(ver)}
+                >
+                  Модули
+                </button>
+              </div>
             {:else}
               <button
                 type="button"
@@ -617,6 +676,44 @@
           </div>
         {/each}
       </div>
+
+      {#if modulesVersion}
+        <div class="mt-4 rounded-xl border border-border bg-muted/20 p-4">
+          <div class="flex items-center justify-between mb-3">
+            <h3 class="text-sm font-semibold text-foreground">Модули PHP {modulesVersion}</h3>
+            <button
+              type="button"
+              class="text-xs text-muted-foreground hover:text-foreground"
+              on:click={() => (modulesVersion = '')}
+            >
+              Закрыть
+            </button>
+          </div>
+
+          {#if modulesLoading}
+            <p class="text-xs text-muted-foreground">Загрузка модулей…</p>
+          {:else}
+            {#if moduleError}
+              <p class="text-xs text-red-400 mb-2">{moduleError}</p>
+            {/if}
+            <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-2">
+              {#each phpModules as mod}
+                <div class="flex items-center justify-between gap-2 rounded-lg border border-border bg-background px-3 py-2">
+                  <span class="text-xs text-foreground">{mod.label}</span>
+                  <button
+                    type="button"
+                    class="text-xs {mod.installed ? 'text-red-400 hover:text-red-300' : 'text-indigo-400 hover:text-indigo-300'} disabled:opacity-50"
+                    disabled={!!moduleBusy}
+                    on:click={() => toggleModule(mod)}
+                  >
+                    {moduleBusy === mod.id ? '…' : mod.installed ? 'Удалить' : 'Установить'}
+                  </button>
+                </div>
+              {/each}
+            </div>
+          {/if}
+        </div>
+      {/if}
 
       <!-- Version Compare toggle -->
       <div class="mt-4 border-t border-border pt-4">

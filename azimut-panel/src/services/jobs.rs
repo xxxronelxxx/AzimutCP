@@ -89,6 +89,7 @@ async fn process_next_job(state: &Arc<AppState>) -> anyhow::Result<bool> {
         "install_php_version" => dispatch_install_php_version(state, &job).await,
         "install_software" => dispatch_software(state, &job, true).await,
         "uninstall_software" => dispatch_software(state, &job, false).await,
+        "php_module" => dispatch_php_module(state, &job).await,
         "backup_site"        => dispatch_backup_site(state, &job).await,
         "run_backup"         => dispatch_backup_site(state, &job).await,
         "restore_backup"     => dispatch_restore_backup(state, &job).await,
@@ -433,6 +434,83 @@ async fn clear_software_lock(state: &Arc<AppState>, id: &str, version: &str) {
     let mut conn = state.valkey.clone();
     let _: Result<(), _> = redis::cmd("DEL")
         .arg(format!("azimut:software:lock:{id}:{version}"))
+        .query_async(&mut conn)
+        .await;
+}
+
+async fn dispatch_php_module(state: &Arc<AppState>, job: &serde_json::Value) {
+    let action = job["action"].as_str().unwrap_or("").to_string();
+    let version = job["version"].as_str().unwrap_or("").to_string();
+    let module = job["module"].as_str().unwrap_or("").to_string();
+
+    let valid = matches!(action.as_str(), "install" | "remove")
+        && regex::Regex::new(r"^[578]\.[0-9]$").unwrap().is_match(&version)
+        && regex::Regex::new(r"^[a-z0-9]{2,16}$").unwrap().is_match(&module);
+    if !valid {
+        tracing::error!(job = %job, "php_module: invalid payload");
+        return;
+    }
+
+    let helper = "/usr/local/sbin/azimut-php-module";
+    if !std::path::Path::new(helper).exists() {
+        tracing::error!(version = %version, module = %module, "php_module: helper not found");
+        php_module_clear_lock(state, &version, &module).await;
+        return;
+    }
+
+    tracing::info!(version = %version, module = %module, action, "Running PHP module operation");
+    let result = tokio::process::Command::new("sudo")
+        .args(["-n", helper, &action, &version, &module])
+        .output()
+        .await;
+
+    match result {
+        Ok(out) if out.status.success() => {
+            tracing::info!(version = %version, module = %module, action, "PHP module operation finished");
+            php_module_clear_error(state, &version, &module).await;
+        }
+        Ok(out) => {
+            let stderr = String::from_utf8_lossy(&out.stderr);
+            tracing::error!(
+                version = %version, module = %module, code = ?out.status.code(),
+                stderr = %stderr, "PHP module operation failed"
+            );
+            let tail: String = stderr.chars().rev().take(800).collect::<String>()
+                .chars().rev().collect();
+            php_module_set_error(state, &version, &module, &tail).await;
+        }
+        Err(e) => {
+            tracing::error!(version = %version, module = %module, error = %e, "Failed to start PHP module helper");
+            php_module_set_error(state, &version, &module, &e.to_string()).await;
+        }
+    }
+
+    php_module_clear_lock(state, &version, &module).await;
+}
+
+async fn php_module_set_error(state: &Arc<AppState>, version: &str, module: &str, message: &str) {
+    let mut conn = state.valkey.clone();
+    let _: Result<(), _> = redis::cmd("SET")
+        .arg(format!("azimut:php:module:error:{version}:{module}"))
+        .arg(message)
+        .arg("EX")
+        .arg(3600)
+        .query_async(&mut conn)
+        .await;
+}
+
+async fn php_module_clear_error(state: &Arc<AppState>, version: &str, module: &str) {
+    let mut conn = state.valkey.clone();
+    let _: Result<(), _> = redis::cmd("DEL")
+        .arg(format!("azimut:php:module:error:{version}:{module}"))
+        .query_async(&mut conn)
+        .await;
+}
+
+async fn php_module_clear_lock(state: &Arc<AppState>, version: &str, module: &str) {
+    let mut conn = state.valkey.clone();
+    let _: Result<(), _> = redis::cmd("DEL")
+        .arg(format!("azimut:php:module:lock:{version}:{module}"))
         .query_async(&mut conn)
         .await;
 }

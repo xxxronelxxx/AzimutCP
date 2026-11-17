@@ -154,6 +154,9 @@ pub fn router() -> Router<Arc<AppState>> {
     Router::new()
         .route("/api/v1/php/versions",                        get(list_php_versions))
         .route("/api/v1/php/versions/{version}/install",       post(install_php_version))
+        .route("/api/v1/php/versions/{version}/modules",       get(list_php_modules))
+        .route("/api/v1/php/versions/{version}/modules/{module}/install",   post(install_php_module))
+        .route("/api/v1/php/versions/{version}/modules/{module}/uninstall", post(uninstall_php_module))
         .route("/api/v1/php/extensions/{site_id}",            get(list_extensions))
         .route("/api/v1/php/extensions/{site_id}/batch",      put(batch_toggle_extensions))
         .route("/api/v1/php/extensions/{site_id}/{ext_name}", put(toggle_extension))
@@ -316,6 +319,146 @@ async fn install_php_version(
     Ok((
         StatusCode::ACCEPTED,
         Json(serde_json::json!({ "status": "queued", "version": version })),
+    ))
+}
+
+// ── PHP modules (system packages) ─────────────────────────────────────────────
+
+const PHP_MODULE_HELPER: &str = "/usr/local/sbin/azimut-php-module";
+
+/// Modules we allow to install/remove. Names match apt package suffixes.
+const PHP_MODULES: &[(&str, &str)] = &[
+    ("bcmath", "BCMath"),
+    ("curl", "cURL"),
+    ("gd", "GD"),
+    ("gmp", "GMP"),
+    ("imagick", "ImageMagick"),
+    ("intl", "Intl"),
+    ("ldap", "LDAP"),
+    ("mbstring", "Multibyte String"),
+    ("memcached", "Memcached"),
+    ("mongodb", "MongoDB"),
+    ("mysql", "MySQL / PDO MySQL"),
+    ("opcache", "OPcache"),
+    ("pgsql", "PostgreSQL / PDO PgSQL"),
+    ("redis", "Redis"),
+    ("soap", "SOAP"),
+    ("sqlite3", "SQLite3"),
+    ("ssh2", "SSH2"),
+    ("tidy", "Tidy"),
+    ("xml", "XML"),
+    ("xdebug", "Xdebug"),
+    ("yaml", "YAML"),
+    ("zip", "Zip"),
+];
+
+fn module_package_installed(version: &str, module: &str) -> bool {
+    let pkg = format!("php{version}-{module}");
+    std::process::Command::new("dpkg-query")
+        .args(["-W", "-f=${Status}", &pkg])
+        .output()
+        .map(|o| String::from_utf8_lossy(&o.stdout).contains("install ok installed"))
+        .unwrap_or(false)
+}
+
+async fn list_php_modules(
+    State(_state): State<Arc<AppState>>,
+    claims: Claims,
+    Path(version): Path<String>,
+) -> ApiResult<Json<serde_json::Value>> {
+    let _ = caller(&claims)?;
+    if !valid_php_version(&version) || !detect_installed_php_versions().iter().any(|v| v == &version) {
+        return Err(ApiError::Validation(format!("PHP {version} is not installed")));
+    }
+
+    let modules: Vec<serde_json::Value> = PHP_MODULES
+        .iter()
+        .map(|(id, label)| {
+            serde_json::json!({
+                "id": id,
+                "label": label,
+                "installed": module_package_installed(&version, id),
+            })
+        })
+        .collect();
+
+    Ok(Json(serde_json::json!({ "version": version, "modules": modules })))
+}
+
+async fn install_php_module(
+    State(state): State<Arc<AppState>>,
+    claims: Claims,
+    Path((version, module)): Path<(String, String)>,
+) -> ApiResult<(StatusCode, Json<serde_json::Value>)> {
+    queue_php_module(state, claims, version, module, "install").await
+}
+
+async fn uninstall_php_module(
+    State(state): State<Arc<AppState>>,
+    claims: Claims,
+    Path((version, module)): Path<(String, String)>,
+) -> ApiResult<(StatusCode, Json<serde_json::Value>)> {
+    queue_php_module(state, claims, version, module, "remove").await
+}
+
+async fn queue_php_module(
+    state: Arc<AppState>,
+    claims: Claims,
+    version: String,
+    module: String,
+    action: &'static str,
+) -> ApiResult<(StatusCode, Json<serde_json::Value>)> {
+    let (_, is_admin) = caller(&claims)?;
+    if !is_admin {
+        return Err(ApiError::Forbidden("Only administrators can manage PHP modules".into()));
+    }
+    if !valid_php_version(&version) {
+        return Err(ApiError::Validation(format!("Invalid PHP version: {version}")));
+    }
+    if !PHP_MODULES.iter().any(|(id, _)| *id == module) {
+        return Err(ApiError::Validation(format!("Unsupported PHP module: {module}")));
+    }
+    if !detect_installed_php_versions().iter().any(|v| v == &version) {
+        return Err(ApiError::Validation(format!("PHP {version} is not installed")));
+    }
+    if !std::path::Path::new(PHP_MODULE_HELPER).exists() {
+        return Err(ApiError::Validation(
+            "PHP module helper is missing. Re-run the installer.".into(),
+        ));
+    }
+
+    {
+        use redis::AsyncCommands;
+        let mut conn = state.valkey.clone();
+        let lock = format!("azimut:php:module:lock:{version}:{module}");
+        let acquired: Option<String> = redis::cmd("SET")
+            .arg(&lock)
+            .arg("1")
+            .arg("NX")
+            .arg("EX")
+            .arg(900)
+            .query_async(&mut conn)
+            .await
+            .unwrap_or(None);
+        if acquired.is_none() {
+            return Err(ApiError::Validation(
+                "An operation for this module is already running".into(),
+            ));
+        }
+
+        let job = serde_json::json!({
+            "type": "php_module",
+            "action": action,
+            "version": version,
+            "module": module,
+        });
+        let _: () = conn.lpush("azimut:jobs", job.to_string()).await.unwrap_or(());
+    }
+
+    tracing::info!(version = %version, module = %module, action, "PHP module operation queued");
+    Ok((
+        StatusCode::ACCEPTED,
+        Json(serde_json::json!({ "status": "queued", "version": version, "module": module, "action": action })),
     ))
 }
 

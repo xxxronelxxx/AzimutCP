@@ -1,6 +1,8 @@
 <script lang="ts">
   import { onMount, onDestroy } from 'svelte';
+  import { get } from 'svelte/store';
   import { api } from '$api/client';
+  import { t } from '$lib/i18n';
 
   type VersionStatus = {
     version: string;
@@ -25,6 +27,17 @@
   let message = '';
   let pollTimer: ReturnType<typeof setInterval> | null = null;
 
+  const categorySlug: Record<string, string> = {
+    'PHP': 'php',
+    'Databases': 'databases',
+    'Cache': 'cache',
+    'Runtimes': 'runtimes',
+    'Tools': 'tools',
+    'Security': 'security',
+    'Web tools': 'web_tools',
+    'Mail': 'mail',
+  };
+
   $: groups = (() => {
     const map = new Map<string, SoftwareItem[]>();
     for (const item of items) {
@@ -47,8 +60,8 @@
     try {
       items = await api.software.list();
       loadError = '';
-    } catch (err: unknown) {
-      loadError = (err as { message?: string })?.message ?? 'Failed to load the software catalog';
+    } catch {
+      loadError = get(t)('software.load_error');
     } finally {
       loading = false;
     }
@@ -74,30 +87,30 @@
   async function install(item: SoftwareItem, version: string) {
     if (busy) return;
     busy = `${item.id}:${version}`;
-    message = `Installing ${item.name} ${version}…`;
+    message = get(t)('software.install_started', { name: item.name, version });
     try {
       await api.software.install(item.id, version);
       startPolling();
     } catch (err: unknown) {
       const e = err as { message?: string; error?: string };
-      message = e.message ?? e.error ?? `Failed to install ${item.name}`;
+      message = e.message ?? e.error ?? get(t)('software.install_failed', { name: item.name });
       busy = '';
     }
   }
 
   async function remove(item: SoftwareItem, version: string) {
     if (busy) return;
-    if (!confirm(`Remove ${item.name} ${version}? This may delete its packages; data directories are kept.`)) {
-      return;
-    }
+    const question = get(t)('software.confirm_remove', { name: item.name, version });
+    if (!confirm(question)) return;
+
     busy = `${item.id}:${version}`;
-    message = `Removing ${item.name} ${version}…`;
+    message = get(t)('software.remove_started', { name: item.name, version });
     try {
       await api.software.uninstall(item.id, version);
       startPolling();
     } catch (err: unknown) {
       const e = err as { message?: string; error?: string };
-      message = e.message ?? e.error ?? `Failed to remove ${item.name}`;
+      message = e.message ?? e.error ?? get(t)('software.remove_failed', { name: item.name });
       busy = '';
     }
   }
@@ -109,16 +122,13 @@
 </script>
 
 <svelte:head>
-  <title>Server Software — AzimutCP</title>
+  <title>{$t('software.title')} — AzimutCP</title>
 </svelte:head>
 
 <div class="p-6 space-y-6">
   <div>
-    <h1 class="text-xl font-semibold text-foreground">Server Software</h1>
-    <p class="text-sm text-muted-foreground mt-1">
-      Install and remove PHP versions, database servers, caches, runtimes and tools.
-      Operations run through the system package manager and can take a few minutes.
-    </p>
+    <h1 class="text-xl font-semibold text-foreground">{$t('software.title')}</h1>
+    <p class="text-sm text-muted-foreground mt-1">{$t('software.subtitle')}</p>
   </div>
 
   {#if message}
@@ -134,11 +144,11 @@
   {/if}
 
   {#if loading}
-    <p class="text-sm text-muted-foreground">Loading catalog…</p>
+    <p class="text-sm text-muted-foreground">{$t('software.loading')}</p>
   {:else}
     {#each groups as [category, list]}
       <section class="space-y-3">
-        <h2 class="text-sm font-semibold uppercase tracking-wide text-muted-foreground">{category}</h2>
+        <h2 class="text-sm font-semibold uppercase tracking-wide text-muted-foreground">{$t(`software.categories.${categorySlug[category] ?? 'tools'}`)}</h2>
 
         <div class="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-3">
           {#each list as item}
@@ -156,7 +166,7 @@
 
                     {#if v.installed}
                       <span class="text-green-400">
-                        Installed{v.in_use > 0 ? ` · ${v.in_use} in use` : ''}
+                        {$t('software.installed')}{v.in_use > 0 ? ` · ${$t('software.in_use', { count: v.in_use })}` : ''}
                       </span>
                       {#if item.removable}
                         <button
@@ -165,10 +175,10 @@
                           disabled={!!busy}
                           on:click={() => remove(item, v.version)}
                         >
-                          {busy === key ? 'Working…' : 'Remove'}
+                          {busy === key ? $t('software.working') : $t('software.remove')}
                         </button>
                       {:else}
-                        <span class="text-muted-foreground">panel dependency</span>
+                        <span class="text-muted-foreground">{$t('software.panel_dependency')}</span>
                       {/if}
                     {:else}
                       <button
@@ -177,7 +187,7 @@
                         disabled={!!busy}
                         on:click={() => install(item, v.version)}
                       >
-                        {busy === key ? 'Working…' : 'Install'}
+                        {busy === key ? $t('software.working') : $t('software.install')}
                       </button>
                     {/if}
                   </div>

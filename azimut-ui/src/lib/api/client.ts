@@ -1326,6 +1326,18 @@ class AzimutApiClient {
     installVersion: (version: string) =>
       this.request<{ status: string; version: string }>('POST', `/api/v1/php/versions/${version}/install`),
 
+    modules: (version: string) =>
+      this.request<{ version: string; modules: Array<{ id: string; label: string; installed: boolean }> }>(
+        'GET',
+        `/api/v1/php/versions/${version}/modules`,
+      ),
+
+    installModule: (version: string, module: string) =>
+      this.request<{ status: string }>('POST', `/api/v1/php/versions/${version}/modules/${module}/install`),
+
+    uninstallModule: (version: string, module: string) =>
+      this.request<{ status: string }>('POST', `/api/v1/php/versions/${version}/modules/${module}/uninstall`),
+
     extensions: (siteId: string) =>
       this.request<Array<{ name: string; enabled: boolean; description: string; dev_only: boolean; category: string; special_note?: string }>>('GET', `/api/v1/php/extensions/${siteId}`),
 

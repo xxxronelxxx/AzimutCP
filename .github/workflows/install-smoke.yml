@@ -83,6 +83,22 @@ jobs:
           fi
           exit 1
 
+      - name: Verify PHP modules API
+        run: |
+          set -euo pipefail
+          TOKEN=$(cat /tmp/azimut_token)
+          AUTH="Authorization: Bearer ${TOKEN}"
+          curl -fsS -H "$AUTH" http://127.0.0.1:2087/api/v1/php/versions -o /tmp/versions2.json
+          V=$(python3 -c "import json;d=json.load(open('/tmp/versions2.json'));print(next(v['version'] for v in d['versions'] if v['installed']))")
+          echo "checking modules for PHP ${V}"
+          curl -fsS -H "$AUTH" "http://127.0.0.1:2087/api/v1/php/versions/${V}/modules" -o /tmp/modules.json
+          python3 - <<'PY'
+          import json
+          d = json.load(open('/tmp/modules.json'))
+          assert len(d['modules']) >= 10, d
+          print('PHP modules API OK:', len(d['modules']), 'modules')
+          PY
+
       - name: Verify software catalog and install jpegoptim
         run: |
           set -euo pipefail
