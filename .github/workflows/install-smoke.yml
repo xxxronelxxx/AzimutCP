@@ -31,8 +31,8 @@ jobs:
       - name: Verify admin login
         run: |
           set -euo pipefail
-          EMAIL=$(grep '^AZIMUT_ADMIN_EMAIL=' /etc/azimutcp/panel.env | cut -d= -f2-)
-          PASS=$(grep '^AZIMUT_ADMIN_PASSWORD=' /etc/azimutcp/panel.env | cut -d= -f2-)
+          EMAIL=$(sudo grep '^AZIMUT_ADMIN_EMAIL=' /etc/azimutcp/panel.env | cut -d= -f2-)
+          PASS=$(sudo grep '^AZIMUT_ADMIN_PASSWORD=' /etc/azimutcp/panel.env | cut -d= -f2-)
           curl -fsS -X POST http://127.0.0.1:2087/api/v1/auth/login \
             -H 'Content-Type: application/json' \
             -d "{\"email\":\"${EMAIL}\",\"password\":\"${PASS}\"}" \
@@ -52,4 +52,4 @@ jobs:
           journalctl -u azimut-ui -n 60 --no-pager || true
           systemctl status azimut-panel --no-pager || true
           systemctl status azimut-ui --no-pager || true
-          cat /etc/azimutcp/panel.env 2>/dev/null | sed 's/PASSWORD=.*/PASSWORD=***/' || true
+          sudo cat /etc/azimutcp/panel.env 2>/dev/null | sed 's/PASSWORD=.*/PASSWORD=***/' || true
