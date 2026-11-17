@@ -28,6 +28,21 @@ jobs:
       - run: npm ci --no-audit --no-fund
       - run: npm run build
 
+      - name: Verify standalone build (no node_modules)
+        run: |
+          tmp="$(mktemp -d)"
+          cp -r build package.json "$tmp"/
+          cd "$tmp"
+          AZIMUT_PORT=3010 AZIMUT_ORIGIN=http://127.0.0.1:3010 node build/index.js &
+          pid=$!
+          ok=0
+          for _ in $(seq 1 30); do
+            if curl -fsS -o /dev/null http://127.0.0.1:3010/login; then ok=1; break; fi
+            sleep 1
+          done
+          kill "$pid" 2>/dev/null || true
+          [ "$ok" = "1" ]
+
   rust:
     name: Rust check
     runs-on: ubuntu-latest

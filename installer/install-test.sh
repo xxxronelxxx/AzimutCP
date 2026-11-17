@@ -31,6 +31,18 @@ log()  { echo -e "${GREEN}[azimut]${NC} $*"; }
 warn() { echo -e "${YELLOW}[warn]${NC} $*"; }
 die()  { echo -e "${RED}[error]${NC} $*" >&2; exit 1; }
 
+APT_LOG="$(mktemp /tmp/azimut-apt.XXXXXX.log)"
+trap 'rm -f "${APT_LOG}"' EXIT
+
+# Run apt quietly; show the tail of its output only when it fails.
+apt_run() {
+    if ! apt-get "$@" >>"${APT_LOG}" 2>&1; then
+        echo "--- apt-get $* ---" >&2
+        tail -n 40 "${APT_LOG}" >&2
+        die "apt-get $* failed"
+    fi
+}
+
 [ "$(id -u)" -eq 0 ] || die "Run as root: sudo ./install-test.sh"
 
 [ -d "${ROOT}/bin" ] || die "bin/ not found next to this script — unpack the release bundle first"
@@ -51,24 +63,27 @@ esac
 # ── Packages ──────────────────────────────────────────────────────────────────
 log "Installing packages…"
 export DEBIAN_FRONTEND=noninteractive
-apt-get update -qq
-apt-get install -y -qq \
+apt_run update -qq
+# apt-utils keeps debconf quiet during the installs below.
+apt_run install -y -qq apt-utils
+apt_run install -y -qq \
     curl ca-certificates openssl gnupg \
     postgresql postgresql-contrib \
-    redis-server nginx \
-    >/dev/null
+    redis-server nginx
 
 # Node.js 20+ (SvelteKit adapter-node). We require /usr/bin/node explicitly
 # because systemd units reference that path.
 NODE_OK=0
-if [ -x /usr/bin/node ] && [ -x /usr/bin/npm ]; then
+if [ -x /usr/bin/node ]; then
     NODE_MAJOR="$(/usr/bin/node -v 2>/dev/null | sed 's/^v//' | cut -d. -f1 || echo 0)"
     [ "${NODE_MAJOR:-0}" -ge 18 ] 2>/dev/null && NODE_OK=1
 fi
 if [ "${NODE_OK}" -ne 1 ]; then
     log "Installing Node.js 20 from NodeSource…"
-    curl -fsSL https://deb.nodesource.com/setup_20.x | bash - >/dev/null
-    apt-get install -y -qq nodejs >/dev/null
+    if ! { curl -fsSL https://deb.nodesource.com/setup_20.x | bash -; apt-get install -y -qq nodejs; } >>"${APT_LOG}" 2>&1; then
+        tail -n 40 "${APT_LOG}" >&2
+        die "Node.js installation failed"
+    fi
 fi
 [ -x /usr/bin/node ] || die "node was not installed correctly"
 
@@ -99,8 +114,8 @@ if [ -d "${ROOT}/apps" ]; then
     cp -r "${ROOT}/apps/." "${PANEL_DIR}/apps/"
 fi
 
-log "Installing UI production dependencies…"
-( cd "${PANEL_DIR}/ui" && npm ci --omit=dev --no-audit --no-fund >/dev/null )
+# The SvelteKit adapter-node build is self-contained: it runs with just
+# `package.json` + `build/`, no node_modules and no npm install required.
 
 # ── Database ──────────────────────────────────────────────────────────────────
 DB_PASS="$(openssl rand -hex 16)"
