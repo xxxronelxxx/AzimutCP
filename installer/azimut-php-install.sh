@@ -11,8 +11,8 @@
 # =============================================================================
 set -euo pipefail
 
-VERSION="${1:-}"
-if [[ ! "${VERSION}" =~ ^[78]\.[0-9]$ ]]; then
+PHP_VERSION="${1:-}"
+if [[ ! "${PHP_VERSION}" =~ ^[78]\.[0-9]$ ]]; then
     echo "usage: azimut-php-install <7.4|8.0|8.1|8.2|8.3|8.4>" >&2
     exit 2
 fi
@@ -20,8 +20,8 @@ fi
 export DEBIAN_FRONTEND=noninteractive
 log() { echo "[azimut-php] $*"; }
 
-if dpkg -s "php${VERSION}-fpm" >/dev/null 2>&1; then
-    log "PHP ${VERSION} is already installed"
+if dpkg -s "php${PHP_VERSION}-fpm" >/dev/null 2>&1; then
+    log "PHP ${PHP_VERSION} is already installed"
     exit 0
 fi
 
@@ -30,7 +30,7 @@ apt-get update -qq
 
 . /etc/os-release
 
-if ! apt-cache show "php${VERSION}-fpm" >/dev/null 2>&1; then
+if ! apt-cache show "php${PHP_VERSION}-fpm" >/dev/null 2>&1; then
     case "${ID:-}" in
         ubuntu)
             log "Adding ppa:ondrej/php…"
@@ -60,24 +60,24 @@ if ! apt-cache show "php${VERSION}-fpm" >/dev/null 2>&1; then
     esac
 fi
 
-if ! apt-cache show "php${VERSION}-fpm" >/dev/null 2>&1; then
-    echo "PHP ${VERSION} is not available from the configured repositories" >&2
+if ! apt-cache show "php${PHP_VERSION}-fpm" >/dev/null 2>&1; then
+    echo "PHP ${PHP_VERSION} is not available from the configured repositories" >&2
     exit 3
 fi
 
-log "Installing PHP ${VERSION}…"
+log "Installing PHP ${PHP_VERSION}…"
 apt-get install -y -qq \
-    "php${VERSION}-fpm" "php${VERSION}-cli" "php${VERSION}-common"
+    "php${PHP_VERSION}-fpm" "php${PHP_VERSION}-cli" "php${PHP_VERSION}-common"
 
 # Optional but expected extensions. A missing one must not fail the install.
 apt-get install -y -qq \
-    "php${VERSION}-mysql" "php${VERSION}-pgsql" "php${VERSION}-gd" \
-    "php${VERSION}-mbstring" "php${VERSION}-xml" "php${VERSION}-curl" \
-    "php${VERSION}-zip" "php${VERSION}-intl" "php${VERSION}-bcmath" \
-    "php${VERSION}-opcache" "php${VERSION}-redis" \
+    "php${PHP_VERSION}-mysql" "php${PHP_VERSION}-pgsql" "php${PHP_VERSION}-gd" \
+    "php${PHP_VERSION}-mbstring" "php${PHP_VERSION}-xml" "php${PHP_VERSION}-curl" \
+    "php${PHP_VERSION}-zip" "php${PHP_VERSION}-intl" "php${PHP_VERSION}-bcmath" \
+    "php${PHP_VERSION}-opcache" "php${PHP_VERSION}-redis" \
     >/dev/null 2>&1 || true
 
-systemctl enable --now "php${VERSION}-fpm" >/dev/null 2>&1 || \
-    systemctl restart "php${VERSION}-fpm" >/dev/null 2>&1 || true
+systemctl enable --now "php${PHP_VERSION}-fpm" >/dev/null 2>&1 || \
+    systemctl restart "php${PHP_VERSION}-fpm" >/dev/null 2>&1 || true
 
-log "PHP ${VERSION} installed"
+log "PHP ${PHP_VERSION} installed"
