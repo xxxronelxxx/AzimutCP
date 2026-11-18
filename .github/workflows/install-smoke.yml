@@ -88,8 +88,8 @@ jobs:
             exit 1
           }
           test -f /etc/nginx/sites-available/smoke.example.test.conf
-          echo '<?php echo "SMOKE_PHP_OK " . PHP_VERSION;' > /home/azimut_smoke_example_test/public_html/index.php
-          chown azimut_smoke_example_test:azimut_smoke_example_test /home/azimut_smoke_example_test/public_html/index.php
+          echo '<?php echo "SMOKE_PHP_OK " . PHP_VERSION;' | sudo tee /home/azimut_smoke_example_test/public_html/index.php >/dev/null
+          sudo chown azimut_smoke_example_test:azimut_smoke_example_test /home/azimut_smoke_example_test/public_html/index.php
           body=$(curl -sS -H 'Host: smoke.example.test' http://127.0.0.1/)
           echo "site response: $body"
           case "$body" in *SMOKE_PHP_OK*) ;; *) echo "PHP site did not respond" >&2; exit 1;; esac
