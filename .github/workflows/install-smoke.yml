@@ -120,14 +120,11 @@ jobs:
 
           python3 - <<'PY'
           import smtplib
+          msg = 'Subject: AzimutCP smoke' + chr(13) + chr(10) + chr(13) + chr(10) + 'hello'
           s = smtplib.SMTP('127.0.0.1', 25, timeout=15)
           s.ehlo()
           s.login('info@smoke.example.test', 'Str0ng!Passw0rd')
-          s.sendmail('info@smoke.example.test', 'info@smoke.example.test',
-                     'Subject: AzimutCP smoke
-
-hello
-')
+          s.sendmail('info@smoke.example.test', 'info@smoke.example.test', msg)
           s.quit()
           print('SMTP accepted the message')
           PY
