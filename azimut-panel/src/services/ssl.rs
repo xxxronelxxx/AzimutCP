@@ -32,9 +32,17 @@ pub async fn issue_certificate(
     // Resolve ACME directory URL (staging vs production)
     let acme_url = &state.config.acme_directory;
 
+    let aliases: Vec<String> = sqlx::query_scalar!(
+        "SELECT domain FROM site_aliases WHERE site_id = $1 ORDER BY domain",
+        site_id
+    )
+    .fetch_all(&state.db)
+    .await
+    .unwrap_or_default();
+
     match challenge_type {
-        "http-01" => issue_http01(state, site_id, domain, acme_url).await,
-        "dns-01"  => issue_dns01(state, site_id, domain, acme_url).await,
+        "http-01" => issue_http01(state, site_id, domain, &aliases, acme_url).await,
+        "dns-01"  => issue_dns01(state, site_id, domain, &aliases, acme_url).await,
         _         => unreachable!(),
     }
 }
@@ -45,6 +53,7 @@ async fn issue_http01(
     state: &Arc<AppState>,
     site_id: Uuid,
     domain: &str,
+    aliases: &[String],
     acme_url: &str,
 ) -> anyhow::Result<()> {
     use instant_acme::{
@@ -55,12 +64,14 @@ async fn issue_http01(
 
     let account = load_or_create_account(acme_url, &state.config.admin_email).await?;
 
-    // ── 2. Create order for domain ───────────────────────────────────────────
-    // We issue for the apex domain only. Tunneled/proxied setups frequently
-    // can't serve HTTP-01 for www without extra configuration, so including
-    // www here would silently invalidate the whole order.
+    // ── 2. Create order for the primary domain and all aliases ───────────────
 
-    let identifiers = vec![Identifier::Dns(domain.to_string())];
+    let mut identifiers = vec![Identifier::Dns(domain.to_string())];
+    for alias in aliases {
+        if alias != domain {
+            identifiers.push(Identifier::Dns(alias.clone()));
+        }
+    }
 
     let mut order = account
         .new_order(&NewOrder { identifiers: &identifiers })
@@ -290,6 +301,7 @@ async fn issue_dns01(
     state: &Arc<AppState>,
     site_id: Uuid,
     domain: &str,
+    aliases: &[String],
     acme_url: &str,
 ) -> anyhow::Result<()> {
     use instant_acme::{
@@ -304,10 +316,15 @@ async fn issue_dns01(
     let account = load_or_create_account(acme_url, &state.config.admin_email).await?;
 
     let wildcard = format!("*.{}", domain);
-    let identifiers = vec![
+    let mut identifiers = vec![
         Identifier::Dns(domain.to_string()),
         Identifier::Dns(wildcard.clone()),
     ];
+    for alias in aliases {
+        if alias != domain {
+            identifiers.push(Identifier::Dns(alias.clone()));
+        }
+    }
 
     let mut order = account
         .new_order(&NewOrder { identifiers: &identifiers })

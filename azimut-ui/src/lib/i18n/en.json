@@ -120,7 +120,20 @@
     "php_version": "PHP Version",
     "disk_used": "Disk Used",
     "created": "Created",
-    "no_sites": "No websites yet. Add your first site to get started."
+    "no_sites": "No websites yet. Add your first site to get started.",
+    "create": {
+      "title": "Create Website",
+      "domain": "Domain name",
+      "php": "PHP version",
+      "web_server": "Web server",
+      "site_type": "Site type",
+      "disk_quota": "Disk quota",
+      "cancel": "Cancel",
+      "create": "Create Website",
+      "creating": "Creating…",
+      "quick_setup": "Quick setup",
+      "unlimited": "Unlimited"
+    }
   },
   "email": {
     "title": "Email",

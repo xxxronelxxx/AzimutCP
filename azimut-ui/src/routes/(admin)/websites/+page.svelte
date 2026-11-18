@@ -4,6 +4,7 @@
   import { api } from '$api/client';
   import type { Site, CreateSitePayload } from '$api/client';
   import { debounce } from '$lib/utils';
+  import { t } from '$lib/i18n';
 
   // ── State ──────────────────────────────────────────────────────────────────
   let sites:        Site[]   = [];
@@ -1083,7 +1084,7 @@
   >
     <div class="bg-card border border-border rounded-2xl p-6 w-full max-w-lg shadow-2xl">
       <div class="flex items-center justify-between mb-5">
-        <h2 id="create-modal-title" class="text-lg font-semibold text-foreground flex items-center gap-2"><svg class="w-4 h-4 text-primary shrink-0" viewBox="0 0 24 24" fill="none" aria-hidden="true"><circle cx="12" cy="12" r="2.8" fill="currentColor"/><ellipse cx="12" cy="12" rx="8" ry="3.2" stroke="currentColor" stroke-width="1.5" fill="none" transform="rotate(-30 12 12)"/><circle cx="18.9" cy="8.0" r="1.4" fill="currentColor"/></svg>Create Website</h2>
+        <h2 id="create-modal-title" class="text-lg font-semibold text-foreground flex items-center gap-2"><svg class="w-4 h-4 text-primary shrink-0" viewBox="0 0 24 24" fill="none" aria-hidden="true"><circle cx="12" cy="12" r="2.8" fill="currentColor"/><ellipse cx="12" cy="12" rx="8" ry="3.2" stroke="currentColor" stroke-width="1.5" fill="none" transform="rotate(-30 12 12)"/><circle cx="18.9" cy="8.0" r="1.4" fill="currentColor"/></svg>{$t('sites.create.title')}</h2>
         <button
           on:click={() => showCreateModal = false}
           disabled={createLoading}
@@ -1118,7 +1119,7 @@
       <div class="space-y-4">
         <!-- Domain -->
         <div>
-          <label class="block text-sm font-medium text-foreground mb-1.5" for="new-domain">Domain name</label>
+          <label class="block text-sm font-medium text-foreground mb-1.5" for="new-domain">{$t('sites.create.domain')}</label>
           <input
             id="new-domain"
             type="text"
@@ -1137,7 +1138,7 @@
 
         <!-- PHP version -->
         <div>
-          <label class="block text-sm font-medium text-foreground mb-2">PHP version</label>
+          <label class="block text-sm font-medium text-foreground mb-2">{$t('sites.create.php')}</label>
           <div class="grid grid-cols-5 gap-2">
             {#each ['8.5', '8.4', '8.3', '8.2', '8.1'] as ver}
               <button
@@ -1209,7 +1210,7 @@
         {#if !quickSetup}
           <!-- Web server -->
           <div>
-            <label class="block text-sm font-medium text-foreground mb-2">Web server</label>
+            <label class="block text-sm font-medium text-foreground mb-2">{$t('sites.create.web_server')}</label>
             <div class="grid grid-cols-3 gap-2">
               {#each [{ value: 'nginx', label: 'Nginx' }, { value: 'apache', label: 'Apache' }, { value: 'ols', label: 'LiteSpeed' }] as ws}
                 <button
@@ -1228,7 +1229,7 @@
 
           <!-- Site type -->
           <div>
-            <label class="block text-sm font-medium text-foreground mb-2">Site type</label>
+            <label class="block text-sm font-medium text-foreground mb-2">{$t('sites.create.site_type')}</label>
             <div class="grid grid-cols-3 gap-2">
               {#each [
                 { value: 'static',    label: 'Static' },
@@ -1252,13 +1253,13 @@
           <!-- Disk quota -->
           <div>
             <label class="block text-sm font-medium text-foreground mb-1.5" for="disk-quota">
-              Disk quota <span class="text-muted-foreground font-normal">(optional, e.g. 5G)</span>
+              {$t('sites.create.disk_quota')} <span class="text-muted-foreground font-normal">(необязательно, например 5G)</span>
             </label>
             <input
               id="disk-quota"
               type="text"
               bind:value={diskQuota}
-              placeholder="Unlimited"
+              placeholder={$t('sites.create.unlimited')}
               class="h-9 rounded-lg border border-border bg-background px-3 text-sm text-foreground
                      placeholder:text-muted-foreground focus:outline-none focus:ring-2 focus:ring-primary/50
                      focus:border-primary w-full"
@@ -1293,7 +1294,7 @@
             class="h-9 px-4 rounded-lg border border-border text-sm text-muted-foreground
                    hover:bg-muted hover:text-foreground inline-flex items-center gap-2 flex-1 justify-center"
           >
-            Cancel
+            {$t('sites.create.cancel')}
           </button>
           <button
             type="button"
@@ -1308,9 +1309,9 @@
                 <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle>
                 <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z"></path>
               </svg>
-              Creating…
+              {$t('sites.create.creating')}
             {:else}
-              Create Website
+              {$t('sites.create.create')}
             {/if}
           </button>
         </div>
