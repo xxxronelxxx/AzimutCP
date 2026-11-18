@@ -114,7 +114,7 @@ jobs:
           test -d /var/mail/vhosts/smoke.example.test/info
           echo "mailbox is active"
 
-      - name: Verify PHP versions API and install 8.4
+      - name: Verify PHP versions API and install 8.3
         run: |
           set -euo pipefail
           TOKEN=$(cat /tmp/azimut_token)
@@ -131,19 +131,19 @@ jobs:
           PY
 
           echo "--- queue PHP 8.4 install ---"
-          curl -fsS -X POST -H "$AUTH" http://127.0.0.1:2087/api/v1/php/versions/8.4/install
+          curl -fsS -X POST -H "$AUTH" http://127.0.0.1:2087/api/v1/php/versions/8.3/install
 
           for _ in $(seq 1 60); do
             curl -fsS -H "$AUTH" http://127.0.0.1:2087/api/v1/php/versions -o /tmp/versions.json
-            installed=$(python3 -c "import json;d=json.load(open('/tmp/versions.json'));print(int(any(v['version']=='8.4' and v['installed'] for v in d['versions'])))")
+            installed=$(python3 -c "import json;d=json.load(open('/tmp/versions.json'));print(int(any(v['version']=='8.3' and v['installed'] for v in d['versions'])))")
             if [ "$installed" = "1" ]; then
-              echo "PHP 8.4 installed"
+              echo "PHP 8.3 installed"
               exit 0
             fi
             sleep 5
           done
 
-          echo "PHP 8.4 installation timed out (package repository may be unavailable)" >&2
+          echo "PHP 8.3 installation timed out (package repository may be unavailable)" >&2
           journalctl -u azimut-panel -n 120 --no-pager || true
           if journalctl -u azimut-panel -n 120 --no-pager | grep -q "Installing PHP version"; then
             echo "Job executed, but the external PHP repository was unavailable — skipping strict check"
