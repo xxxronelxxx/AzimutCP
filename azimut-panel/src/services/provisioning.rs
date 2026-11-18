@@ -441,6 +441,10 @@ fn create_home_dir(unix_user: &str) -> anyhow::Result<()> {
         &["-d", "-o", unix_user, "-g", unix_user, "-m", "755", home.as_str()],
     )?;
     run_cmd("chown", &["-R", &format!("{}:{}", unix_user, unix_user), &format!("/home/{}", unix_user)])?;
+    // nginx/apache run as www-data and need to traverse the home directory.
+    // Keep public_html owned by the site user, but put the home dir in the
+    // www-data group with 750 so the web server can enter it.
+    run_cmd("chown", &[&format!("{}:www-data", unix_user), &format!("/home/{}", unix_user)])?;
     run_cmd("chmod", &["750", &format!("/home/{}", unix_user)])?;
     Ok(())
 }

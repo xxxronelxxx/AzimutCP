@@ -88,6 +88,11 @@ jobs:
             exit 1
           }
           test -f /etc/nginx/sites-available/smoke.example.test.conf
+          echo '<?php echo "SMOKE_PHP_OK " . PHP_VERSION;' > /home/azimut_smoke_example_test/public_html/index.php
+          chown azimut_smoke_example_test:azimut_smoke_example_test /home/azimut_smoke_example_test/public_html/index.php
+          body=$(curl -sS -H 'Host: smoke.example.test' http://127.0.0.1/)
+          echo "site response: $body"
+          case "$body" in *SMOKE_PHP_OK*) ;; *) echo "PHP site did not respond" >&2; exit 1;; esac
           echo "site is active"
 
           echo "--- create email domain and mailbox ---"
@@ -112,7 +117,23 @@ jobs:
           }
           sudo grep -q 'info@smoke.example.test' /etc/dovecot/users
           test -d /var/mail/vhosts/smoke.example.test/info
-          echo "mailbox is active"
+
+          python3 - <<'PY'
+          import smtplib
+          s = smtplib.SMTP('127.0.0.1', 25, timeout=15)
+          s.ehlo()
+          s.login('info@smoke.example.test', 'Str0ng!Passw0rd')
+          s.sendmail('info@smoke.example.test', 'info@smoke.example.test',
+                     'Subject: AzimutCP smoke
+
+hello
+')
+          s.quit()
+          print('SMTP accepted the message')
+          PY
+          sleep 3
+          find /var/mail/vhosts/smoke.example.test/info/new -type f | grep -q .             || { echo "message was not delivered to the Maildir" >&2; exit 1; }
+          echo "mailbox is active and delivered a message"
 
       - name: Verify DNS API
         run: |

@@ -239,7 +239,12 @@ userdb {
 EOF
 
     sed -i 's/^!include auth-system.conf.ext/#!include auth-system.conf.ext/' /etc/dovecot/conf.d/10-auth.conf 2>/dev/null || true
-    grep -q 'auth-passwdfile.conf.ext' /etc/dovecot/conf.d/10-auth.conf 2>/dev/null         || echo '!include auth-passwdfile.conf.ext' >> /etc/dovecot/conf.d/10-auth.conf
+    # The stock file ships the passwd-file include commented out; uncomment it.
+    if grep -q '^#!include auth-passwdfile.conf.ext' /etc/dovecot/conf.d/10-auth.conf 2>/dev/null; then
+        sed -i 's/^#!include auth-passwdfile.conf.ext/!include auth-passwdfile.conf.ext/' /etc/dovecot/conf.d/10-auth.conf
+    elif ! grep -q '^!include auth-passwdfile.conf.ext' /etc/dovecot/conf.d/10-auth.conf 2>/dev/null; then
+        echo '!include auth-passwdfile.conf.ext' >> /etc/dovecot/conf.d/10-auth.conf
+    fi
     sed -i 's/^#\?disable_plaintext_auth.*/disable_plaintext_auth = no/' /etc/dovecot/conf.d/10-auth.conf 2>/dev/null || true
     sed -i 's/^#\?auth_mechanisms.*/auth_mechanisms = plain login/' /etc/dovecot/conf.d/10-auth.conf 2>/dev/null || true
 
@@ -325,7 +330,7 @@ apt_run update -qq
 # apt-utils keeps debconf quiet during the installs below.
 apt_run install -y -qq apt-utils
 apt_run install -y -qq \
-    curl ca-certificates openssl gnupg sudo \
+    curl ca-certificates openssl gnupg sudo acl \
     postgresql postgresql-contrib \
     redis-server nginx
 
