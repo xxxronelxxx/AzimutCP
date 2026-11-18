@@ -1,8 +1,8 @@
 # Testing AzimutCP on a VM
 
 This describes the **minimal build**: panel API + UI + PostgreSQL +
-Valkey + nginx, PHP 8.4, MariaDB 11 and the mail stack (Postfix/Dovecot/rspamd).
-DNS (PowerDNS), Apache/OLS, quotas and cgroups are not
+Valkey + nginx, PHP 8.4, MariaDB 11, the mail stack (Postfix/Dovecot/rspamd)
+and PowerDNS. Apache/OLS, quotas and cgroups are not
 configured — those need the full installer and a real hosting setup.
 
 Use a **fresh** Ubuntu 22.04/24.04 or Debian 12 VM. Do not run this on a

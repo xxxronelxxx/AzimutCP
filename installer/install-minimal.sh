@@ -6,7 +6,7 @@
 # what is needed to open the panel and click around:
 #   PostgreSQL + Valkey/Redis + nginx + Node.js + azimut-panel + UI
 #
-# DNS (PowerDNS), Apache/OLS, quotas and cgroups are NOT configured by
+# Apache/OLS, quotas and cgroups are NOT configured by
 # this script — those features will report errors until the full installer is
 # used. Do not run this on a production server.
 #
@@ -60,6 +60,93 @@ case "${ID:-}" in
     *) warn "Untested OS '${ID:-unknown}' — continuing anyway" ;;
 esac
 
+
+
+# ── DNS stack ────────────────────────────────────────────────────────────────
+
+setup_dns_stack() {
+    log "Installing PowerDNS…"
+
+    apt_run install -y -qq pdns-server pdns-backend-pgsql pdns-tools
+
+    local schema=""
+    for candidate in         /usr/share/pdns-backend-pgsql/schema/schema.pgsql.sql         /usr/share/pdns-backend-pgsql/schema.pgsql.sql         /usr/share/doc/pdns-backend-pgsql/schema.pgsql.sql; do
+        if [ -f "${candidate}" ]; then schema="${candidate}"; break; fi
+    done
+
+    if [ -n "${schema}" ]; then
+        runuser -u postgres -- psql -q -d azimutcp -f "${schema}" >/dev/null 2>&1 || true
+        runuser -u postgres -- psql -q -d azimutcp -c             'GRANT ALL PRIVILEGES ON ALL TABLES IN SCHEMA public TO azimutcp; GRANT ALL PRIVILEGES ON ALL SEQUENCES IN SCHEMA public TO azimutcp;'             >/dev/null 2>&1 || true
+    else
+        warn "PowerDNS PostgreSQL schema not found; DNS may not work"
+    fi
+
+    local pdns_key; pdns_key="$(openssl rand -hex 16)"
+
+    # Authoritative DNS needs port 53; the systemd stub resolver conflicts.
+    if systemctl is-enabled systemd-resolved >/dev/null 2>&1; then
+        systemctl disable --now systemd-resolved >/dev/null 2>&1 || true
+        rm -f /etc/resolv.conf
+        printf 'nameserver 1.1.1.1
+nameserver 8.8.8.8
+' > /etc/resolv.conf
+    fi
+
+    install -d -m 755 /etc/powerdns/pdns.d
+    grep -q '^include-dir=' /etc/powerdns/pdns.conf 2>/dev/null         || echo 'include-dir=/etc/powerdns/pdns.d' >> /etc/powerdns/pdns.conf
+    cat > /etc/powerdns/pdns.d/azimutcp.conf <<EOF
+launch=gpgsql
+gpgsql-host=127.0.0.1
+gpgsql-port=5432
+gpgsql-dbname=azimutcp
+gpgsql-user=azimutcp
+gpgsql-password=${DB_PASS}
+gpgsql-dnssec=yes
+api=yes
+api-key=${pdns_key}
+webserver=yes
+webserver-address=127.0.0.1
+webserver-port=8081
+webserver-allow-from=127.0.0.1,::1
+local-address=0.0.0.0
+local-port=53
+EOF
+    chmod 640 /etc/powerdns/pdns.d/azimutcp.conf
+    chown root:pdns /etc/powerdns/pdns.d/azimutcp.conf 2>/dev/null || true
+
+    cat > /etc/azimutcp/dns.env <<EOF
+PDNS_API_URL=http://127.0.0.1:8081
+PDNS_API_KEY=${pdns_key}
+AZIMUT_DNS_LISTEN=127.0.0.1:5353
+EOF
+    chown root:"${SVC_USER}" /etc/azimutcp/dns.env
+    chmod 640 /etc/azimutcp/dns.env
+
+    cat > /etc/systemd/system/azimut-dns.service <<'EOF'
+[Unit]
+Description=AzimutCP DNS API proxy (PowerDNS)
+After=network.target pdns.service
+Wants=pdns.service
+
+[Service]
+Type=simple
+User=azimutcp
+Group=azimutcp
+WorkingDirectory=/opt/azimutcp
+EnvironmentFile=/etc/azimutcp/dns.env
+ExecStart=/opt/azimutcp/bin/azimut-dns
+Restart=always
+RestartSec=3
+
+[Install]
+WantedBy=multi-user.target
+EOF
+
+    systemctl daemon-reload
+    systemctl enable --now pdns >/dev/null 2>&1 || warn "PowerDNS failed to start"
+    systemctl enable --now azimut-dns >/dev/null 2>&1 || warn "azimut-dns failed to start"
+    log "PowerDNS + azimut-dns configured"
+}
 
 # ── Mail stack ────────────────────────────────────────────────────────────────
 
@@ -377,6 +464,7 @@ runuser -u postgres -- psql -q -d azimutcp -c \
     'CREATE EXTENSION IF NOT EXISTS "pgcrypto"; CREATE EXTENSION IF NOT EXISTS "citext";'
 
 setup_mail_stack
+setup_dns_stack
 
 # ── Credentials ───────────────────────────────────────────────────────────────
 ADMIN_EMAIL="admin@${DOMAIN}"
@@ -569,6 +657,6 @@ $(printf '\033[0;32m')═══════════════════�
              journalctl -u azimut-ui -f
   Config:    ${ENV_FILE}
 
-  Minimal profile — not configured: DNS/PowerDNS, OLS/Apache,
+  Minimal profile — not configured: OLS/Apache,
   cgroups/quotas. Use installer/install.sh for a full stack.
 EOF

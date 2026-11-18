@@ -49,7 +49,7 @@ jobs:
       - name: Verify default hosting stack
         run: |
           set -euo pipefail
-          for svc in nginx mariadb php8.4-fpm postfix dovecot rspamd azimut-mail; do
+          for svc in nginx mariadb php8.4-fpm postfix dovecot rspamd azimut-mail pdns azimut-dns; do
             echo "--- $svc ---"
             systemctl is-active "$svc"
           done
@@ -113,6 +113,28 @@ jobs:
           sudo grep -q 'info@smoke.example.test' /etc/dovecot/users
           test -d /var/mail/vhosts/smoke.example.test/info
           echo "mailbox is active"
+
+      - name: Verify DNS API
+        run: |
+          set -euo pipefail
+          TOKEN=$(cat /tmp/azimut_token)
+          AUTH="Authorization: Bearer ${TOKEN}"
+          JSON="Content-Type: application/json"
+
+          curl -fsS -X POST -H "$AUTH" -H "$JSON"             -d '{"domain":"smoke.example.test"}'             http://127.0.0.1:2087/api/v1/dns/zones -o /tmp/zone.json
+          cat /tmp/zone.json
+          ZONE_ID=$(python3 -c "import json;print(json.load(open('/tmp/zone.json'))['id'])")
+
+          curl -fsS -X POST -H "$AUTH" -H "$JSON"             -d '{"record_type":"A","name":"@","content":"127.0.0.1","ttl":300}'             "http://127.0.0.1:2087/api/v1/dns/zones/${ZONE_ID}/records" -o /tmp/record.json
+          cat /tmp/record.json
+
+          curl -fsS -H "$AUTH" "http://127.0.0.1:2087/api/v1/dns/zones/${ZONE_ID}/records" -o /tmp/records.json
+          python3 - <<'PY'
+          import json
+          recs = json.load(open('/tmp/records.json'))
+          assert any(r.get('content') == '127.0.0.1' for r in recs), recs
+          print('DNS zone and record created')
+          PY
 
       - name: Verify PHP versions API and install 8.3
         run: |
