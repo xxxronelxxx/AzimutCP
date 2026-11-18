@@ -84,8 +84,9 @@ checksum and sets up the panel API, the UI, PostgreSQL, Valkey, nginx and
 systemd units. Credentials for the initial admin account are printed at the
 end.
 
-This is the **minimal install**: mail, PowerDNS, Apache/OLS, quotas and
-cgroups are not configured yet. See [TESTING.md](TESTING.md) for details and
+This is the **minimal install**: nginx, PHP 8.4, MariaDB 11, PostgreSQL and
+the mail stack are ready to use. PowerDNS, Apache/OLS, quotas and cgroups are
+not configured yet. See [TESTING.md](TESTING.md) for details and
 troubleshooting.
 
 A source build (no prebuilt bundle) is available as

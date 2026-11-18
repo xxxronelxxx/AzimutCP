@@ -6,7 +6,7 @@
 # what is needed to open the panel and click around:
 #   PostgreSQL + Valkey/Redis + nginx + Node.js + azimut-panel + UI
 #
-# Mail, DNS (PowerDNS), Apache/OLS, quotas and cgroups are NOT configured by
+# DNS (PowerDNS), Apache/OLS, quotas and cgroups are NOT configured by
 # this script — those features will report errors until the full installer is
 # used. Do not run this on a production server.
 #
@@ -566,6 +566,6 @@ $(printf '\033[0;32m')═══════════════════�
              journalctl -u azimut-ui -f
   Config:    ${ENV_FILE}
 
-  Minimal profile — not configured: mail, DNS/PowerDNS, OLS/Apache,
+  Minimal profile — not configured: DNS/PowerDNS, OLS/Apache,
   cgroups/quotas. Use installer/install.sh for a full stack.
 EOF
