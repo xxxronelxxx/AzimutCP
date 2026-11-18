@@ -214,6 +214,7 @@ async fn set_runtime(
                 let job = crate::services::provisioning::ProvisioningJob {
                     site_id: uuid::Uuid::nil(),
                     domain:      dom.clone(),
+                    aliases:     Vec::new(),
                     php_version: php_ver,
                     web_server:  web_sv,
                     unix_user:   usr.clone(),

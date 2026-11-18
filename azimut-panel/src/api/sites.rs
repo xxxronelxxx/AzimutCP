@@ -257,6 +257,36 @@ async fn create_site(
         return Err(ApiError::DomainConflict { domain });
     }
 
+    let mut aliases: Vec<String> = req.aliases
+        .iter()
+        .map(|a| a.trim().to_lowercase())
+        .filter(|a| !a.is_empty())
+        .collect();
+    aliases.sort();
+    aliases.dedup();
+
+    for alias in &aliases {
+        if !is_valid_domain(alias) {
+            return Err(ApiError::Validation(format!("'{}' is not a valid alias domain", alias)));
+        }
+        if alias == &domain {
+            return Err(ApiError::Validation("Alias must differ from the primary domain".into()));
+        }
+        let taken: bool = sqlx::query_scalar!(
+            r#"SELECT EXISTS(
+                   SELECT 1 FROM sites WHERE domain = $1 AND deleted_at IS NULL
+                   UNION ALL
+                   SELECT 1 FROM site_aliases WHERE domain = $1
+               ) AS "exists!""#,
+            alias
+        )
+        .fetch_one(&state.db)
+        .await?;
+        if taken {
+            return Err(ApiError::DomainConflict { domain: alias.clone() });
+        }
+    }
+
     let unix_user = format!(
         "azimut_{}",
         domain.replace('.', "_").replace('-', "_").chars().take(24).collect::<String>()
