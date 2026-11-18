@@ -194,7 +194,7 @@
 
   const softwareList = [
     { key: 'nginx',   label: 'nginx' },
-    { key: 'php',     label: 'PHP 8.3' },
+    { key: 'php',     label: 'PHP 8.4' },
     { key: 'mysql',   label: 'MySQL' },
     { key: 'redis',   label: 'Redis' },
     { key: 'certbot', label: 'Certbot' },

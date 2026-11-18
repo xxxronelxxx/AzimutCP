@@ -46,6 +46,74 @@ jobs:
           print('login OK, role =', d['role'])
           PY
 
+      - name: Verify default hosting stack
+        run: |
+          set -euo pipefail
+          for svc in nginx mariadb php8.4-fpm postfix dovecot rspamd azimut-mail; do
+            echo "--- $svc ---"
+            systemctl is-active "$svc"
+          done
+
+          TOKEN=$(cat /tmp/azimut_token)
+          AUTH="Authorization: Bearer ${TOKEN}"
+          curl -fsS -H "$AUTH" http://127.0.0.1:2087/api/v1/php/versions -o /tmp/versions0.json
+          python3 - <<'PY'
+          import json
+          d = json.load(open('/tmp/versions0.json'))
+          assert any(v['version'] == '8.4' and v['installed'] for v in d['versions']), d
+          print('PHP 8.4 installed by default')
+          PY
+
+      - name: Create a site and an email account
+        run: |
+          set -euo pipefail
+          TOKEN=$(cat /tmp/azimut_token)
+          AUTH="Authorization: Bearer ${TOKEN}"
+          JSON="Content-Type: application/json"
+
+          echo "--- create site ---"
+          curl -fsS -X POST -H "$AUTH" -H "$JSON"             -d '{"domain":"smoke.example.test","php_version":"8.4","web_server":"nginx"}'             http://127.0.0.1:2087/api/v1/sites -o /tmp/site.json
+          cat /tmp/site.json
+
+          SITE_ID=$(python3 -c "import json;print(json.load(open('/tmp/site.json'))['id'])")
+          for _ in $(seq 1 60); do
+            curl -fsS -H "$AUTH" "http://127.0.0.1:2087/api/v1/sites/${SITE_ID}" -o /tmp/site2.json
+            status=$(python3 -c "import json;print(json.load(open('/tmp/site2.json'))['status'])")
+            [ "$status" = "active" ] && break
+            sleep 5
+          done
+          [ "$status" = "active" ] || {
+            echo "site provisioning failed: $status" >&2
+            journalctl -u azimut-panel -n 120 --no-pager || true
+            exit 1
+          }
+          test -f /etc/nginx/sites-available/smoke.example.test.conf
+          echo "site is active"
+
+          echo "--- create email domain and mailbox ---"
+          curl -fsS -X POST -H "$AUTH" -H "$JSON"             -d "{\"site_id\":\"${SITE_ID}\"}"             http://127.0.0.1:2087/api/v1/email/domains -o /tmp/domain.json
+          cat /tmp/domain.json
+
+          curl -fsS -X POST -H "$AUTH" -H "$JSON"             -d "{\"site_id\":\"${SITE_ID}\",\"address\":\"info\",\"password\":\"Str0ng!Passw0rd\",\"quota_mb\":256}"             http://127.0.0.1:2087/api/v1/email/accounts -o /tmp/account.json
+          cat /tmp/account.json
+
+          ACCOUNT_ID=$(python3 -c "import json;print(json.load(open('/tmp/account.json'))['id'])")
+          for _ in $(seq 1 24); do
+            curl -fsS -H "$AUTH" "http://127.0.0.1:2087/api/v1/email/accounts/${ACCOUNT_ID}" -o /tmp/account2.json
+            status=$(python3 -c "import json;print(json.load(open('/tmp/account2.json'))['status'])")
+            [ "$status" = "active" ] && break
+            sleep 5
+          done
+          [ "$status" = "active" ] || {
+            echo "mailbox provisioning failed: $status" >&2
+            journalctl -u azimut-panel -n 120 --no-pager || true
+            journalctl -u azimut-mail -n 80 --no-pager || true
+            exit 1
+          }
+          sudo grep -q 'info@smoke.example.test' /etc/dovecot/users
+          test -d /var/mail/vhosts/smoke.example.test/info
+          echo "mailbox is active"
+
       - name: Verify PHP versions API and install 8.4
         run: |
           set -euo pipefail

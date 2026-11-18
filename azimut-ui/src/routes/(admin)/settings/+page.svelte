@@ -14,7 +14,7 @@
     panel_email: '',
     company_name: '',
     timezone: 'UTC',
-    default_php: '8.3',
+    default_php: '8.4',
     default_webserver: 'nginx' as 'nginx' | 'apache' | 'ols',
     language: 'ru',
     date_format: 'MM/DD/YYYY',

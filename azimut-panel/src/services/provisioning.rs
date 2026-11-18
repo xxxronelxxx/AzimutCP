@@ -335,15 +335,15 @@ async fn provision_local(state: &Arc<AppState>, job: &ProvisioningJob) -> anyhow
         return Err(e);
     }
 
-    // Step C: write cgroup slice + start it
-    let result = write_cgroup_slice(&job.domain, &job.unix_user)
-        .and_then(|_| run_cmd("systemctl", &["daemon-reload"]))
-        .and_then(|_| run_cmd("systemctl", &["start", &format!("website-{}.slice", job.domain)]));
-    if let Err(e) = result {
-        let _ = run_cmd("userdel", &["--remove", &job.unix_user]);
-        return Err(e);
+    // Step C: write cgroup slice + start it. Cgroups are optional in the
+    // minimal install; a failure must not block site creation.
+    if write_cgroup_slice(&job.domain, &job.unix_user).is_ok() {
+        let _ = run_cmd("systemctl", &["daemon-reload"]);
+        let _ = run_cmd("systemctl", &["start", &format!("website-{}.slice", job.domain)]);
+        cgroup_written = true;
+    } else {
+        tracing::warn!(domain = %job.domain, "cgroup slice could not be written; continuing without it");
     }
-    cgroup_written = true;
 
     // Step D: write PHP-FPM pool + reload FPM
     let result = write_php_fpm_pool(job)
@@ -413,8 +413,11 @@ async fn provision_local(state: &Arc<AppState>, job: &ProvisioningJob) -> anyhow
 
 fn create_unix_user(unix_user: &str) -> anyhow::Result<()> {
     // useradd is idempotent when user already exists (exit 9 = already exists; treat as OK)
-    let status = std::process::Command::new("useradd")
+    let status = std::process::Command::new("sudo")
+        .arg("-n")
+        .arg("useradd")
         .args([
+            "--user-group",
             "--system",
             "--no-create-home",
             "--shell", "/usr/sbin/nologin",
@@ -433,9 +436,10 @@ fn create_unix_user(unix_user: &str) -> anyhow::Result<()> {
 
 fn create_home_dir(unix_user: &str) -> anyhow::Result<()> {
     let home = format!("/home/{}/public_html", unix_user);
-    std::fs::create_dir_all(&home)
-        .map_err(|e| anyhow::anyhow!("mkdir -p {} failed: {}", home, e))?;
-
+    run_cmd(
+        "install",
+        &["-d", "-o", unix_user, "-g", unix_user, "-m", "755", home.as_str()],
+    )?;
     run_cmd("chown", &["-R", &format!("{}:{}", unix_user, unix_user), &format!("/home/{}", unix_user)])?;
     run_cmd("chmod", &["750", &format!("/home/{}", unix_user)])?;
     Ok(())
@@ -545,8 +549,7 @@ fn write_php_fpm_pool(job: &ProvisioningJob) -> anyhow::Result<()> {
         format!("/var/azimutcp/opcache/{}", job.unix_user),
         format!("/home/{}/logs", job.unix_user),
     ] {
-        std::fs::create_dir_all(dir)
-            .map_err(|e| anyhow::anyhow!("mkdir {} failed: {}", dir, e))?;
+        run_cmd("install", &["-d", "-o", job.unix_user.as_str(), "-g", job.unix_user.as_str(), "-m", "755", dir.as_str()])?;
     }
 
     let pool_path = format!(
@@ -920,7 +923,7 @@ pub async fn deprovision_site(
         if std::path::Path::new(path).exists() {
             let _ = std::fs::remove_file(path);
             // Find the PHP version from the path and reload that FPM
-            let ver = path.split('/').nth(3).unwrap_or("8.3");
+            let ver = path.split('/').nth(3).unwrap_or("8.4");
             let _ = run_cmd("systemctl", &["reload", &format!("php{}-fpm", ver)]);
         }
     }
@@ -1103,7 +1106,7 @@ pub fn switch_webserver_sync(domain: &str, unix_user: &str, new_ws: &str, php_ve
     }
 
     // Build a minimal ProvisioningJob for the vhost writers
-    let ver = if php_version.is_empty() { "8.3" } else { php_version };
+    let ver = if php_version.is_empty() { "8.4" } else { php_version };
     let job = ProvisioningJob {
         site_id:     uuid::Uuid::nil(),
         domain:      domain.to_string(),
@@ -1144,9 +1147,22 @@ pub fn switch_webserver_sync(domain: &str, unix_user: &str, new_ws: &str, php_ve
 
 /// Run an external command, capturing stderr on failure.
 fn run_cmd(program: &str, args: &[&str]) -> anyhow::Result<()> {
-    let output = std::process::Command::new(program)
-        .args(args)
-        .output()
+    // The panel runs as an unprivileged user; use the narrow sudo rules for
+    // the handful of operations that need root.
+    let privileged = matches!(
+        program,
+        "systemctl" | "nginx" | "userdel" | "chown" | "chmod" | "setfacl"
+            | "setquota" | "install" | "crontab" | "a2ensite" | "apachectl"
+    );
+    let output = if privileged {
+        std::process::Command::new("sudo")
+            .arg("-n")
+            .arg(program)
+            .args(args)
+            .output()
+    } else {
+        std::process::Command::new(program).args(args).output()
+    }
         .map_err(|e| anyhow::anyhow!("exec '{}' failed: {}", program, e))?;
 
     if !output.status.success() {

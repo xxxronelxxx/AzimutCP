@@ -325,11 +325,17 @@ async fn add_domain(
         .await
         .map_err(|e| ApiError::internal(e.to_string()))?;
 
+    postmap(&state.config.virtual_domains_file)
+        .await
+        .map_err(|e| ApiError::internal(format!("postmap failed: {e}")))?;
+
     // Create vmail directory for domain
     let domain_dir = state.config.vmail_base.join(&domain);
     fs::create_dir_all(&domain_dir)
         .await
         .map_err(|e| ApiError::internal(format!("failed to create vmail dir: {e}")))?;
+    let domain_dir_str = domain_dir.to_string_lossy().to_string();
+    let _ = run_cmd("chown", &["-R", "vmail:vmail", &domain_dir_str]).await;
 
     postfix_reload()
         .await
@@ -354,6 +360,10 @@ async fn delete_domain(
     if removed == 0 {
         return Err(ApiError::not_found(format!("domain '{domain}' not found")));
     }
+
+    postmap(&state.config.virtual_domains_file)
+        .await
+        .map_err(|e| ApiError::internal(format!("postmap failed: {e}")))?;
 
     postfix_reload()
         .await
@@ -429,6 +439,9 @@ async fn create_account(
     )
     .await
     .map_err(|e| ApiError::internal(format!("maildirmake.dovecot failed: {e}")))?;
+
+    let maildir_str = maildir_path.to_string_lossy().to_string();
+    let _ = run_cmd("chown", &["-R", "vmail:vmail", &maildir_str]).await;
 
     info!(email = %email, quota_mb, "email account created");
     Ok((

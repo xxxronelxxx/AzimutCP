@@ -128,7 +128,8 @@ async fn set_ext4_quota(unix_user: &str, quota_mb: i64) -> anyhow::Result<()> {
     let soft_kb = quota_mb * 1024;
     let hard_kb = quota_mb * 1024;
 
-    let output = std::process::Command::new("setquota")
+    let output = std::process::Command::new("sudo")
+        .args(["-n", "setquota"])
         .args([
             "-u",
             unix_user,

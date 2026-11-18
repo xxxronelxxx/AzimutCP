@@ -259,7 +259,7 @@ async fn list_php_versions(
 
     Ok(Json(serde_json::json!({
         "versions": list,
-        "default":  latest.unwrap_or_else(|| "8.3".to_string()),
+        "default":  latest.unwrap_or_else(|| "8.4".to_string()),
         "installer_available": std::path::Path::new(PHP_INSTALL_HELPER).exists(),
     })))
 }

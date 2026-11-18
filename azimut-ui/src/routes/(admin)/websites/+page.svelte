@@ -33,7 +33,7 @@
   let phpPreset              = 'none';
   let newSite: CreateSitePayload = {
     domain:     '',
-    php_version: '8.3',
+    php_version: '8.4',
     web_server: 'nginx',
     plan:       'static',
   };
@@ -135,7 +135,7 @@
 
   // ── Create ─────────────────────────────────────────────────────────────────
   function openCreateModal() {
-    newSite = { domain: '', php_version: '8.3', web_server: 'nginx', plan: 'static' };
+    newSite = { domain: '', php_version: '8.4', web_server: 'nginx', plan: 'static' };
     createError = '';
     quickSetup = true;
     diskQuota = '';

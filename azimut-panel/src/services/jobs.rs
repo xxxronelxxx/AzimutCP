@@ -158,7 +158,7 @@ async fn process_next_job(state: &Arc<AppState>) -> anyhow::Result<bool> {
 async fn dispatch_provision_site(state: &Arc<AppState>, job: &serde_json::Value) {
     let site_id    = parse_uuid(job, "site_id");
     let domain     = job["domain"].as_str().unwrap_or("").to_string();
-    let php_version = job["php_version"].as_str().unwrap_or("8.3").to_string();
+    let php_version = job["php_version"].as_str().unwrap_or("8.4").to_string();
     let web_server  = job["web_server"].as_str().unwrap_or("nginx").to_string();
     let unix_user   = job["unix_user"].as_str().unwrap_or("").to_string();
     let server_id   = job["server_id"].as_str().and_then(|s| Uuid::parse_str(s).ok());
@@ -620,7 +620,15 @@ async fn dispatch_delete_backup_files(_state: &Arc<AppState>, job: &serde_json::
 
 /// Run a system command (fire-and-check); returns Ok on spawn. Local to this module.
 fn run_cmd(cmd: &str, args: &[&str]) -> std::io::Result<std::process::Output> {
-    std::process::Command::new(cmd).args(args).output()
+    let privileged = matches!(
+        cmd,
+        "systemctl" | "chown" | "chmod" | "nginx" | "crontab" | "setquota" | "install"
+    );
+    if privileged {
+        std::process::Command::new("sudo").arg("-n").arg(cmd).args(args).output()
+    } else {
+        std::process::Command::new(cmd).args(args).output()
+    }
 }
 
 /// Only allow [A-Za-z0-9_] identifiers — DB names/users come from validated input
@@ -947,7 +955,7 @@ async fn dispatch_sync_cron(state: &Arc<AppState>, job: &serde_json::Value) {
     for r in &rows { tab.push_str(&format!("{} {}\n", r.schedule, r.command)); }
     // crontab -u <user> - (read from stdin)
     use std::io::Write;
-    if let Ok(mut child) = std::process::Command::new("crontab").args(["-u", user, "-"])
+    if let Ok(mut child) = std::process::Command::new("sudo").args(["-n", "crontab", "-u", user, "-"])
         .stdin(std::process::Stdio::piped()).spawn() {
         if let Some(si) = child.stdin.as_mut() { let _ = si.write_all(tab.as_bytes()); }
         let _ = child.wait();
@@ -2029,14 +2037,15 @@ async fn dispatch_install_app(state: &Arc<AppState>, job: &serde_json::Value) {
 
                 publish_progress!("run", step_pct, format!("Step {}/{}: permissions on {}", i + 1, total_steps, path));
 
-                let _ = tokio::process::Command::new("chown")
-                    .args(["-R", &format!("{owner}:{group}"), &path])
+                let _ = tokio::process::Command::new("sudo")
+                    .args(["-n", "chown", "-R", &format!("{owner}:{group}"), &path])
                     .output().await;
-                let _ = tokio::process::Command::new("find")
-                    .args([&path, "-type", "d", "-exec", "chmod", dir_mode, "{}", ";"])
+                let _ = tokio::process::Command::new("sudo")
+                    .args(["-n", "find", path.as_str(), "-type", "d", "-exec", "chmod", dir_mode, "{}", ";"])
                     .output().await;
-                let _ = tokio::process::Command::new("find")
-                    .args([&path, "-type", "f", "-exec", "chmod", file_mode, "{}", ";"])
+                let _ = tokio::process::Command::new("sudo")
+                    .args(["-n", "find"])
+                    .args([path.as_str(), "-type", "f", "-exec", "chmod", file_mode, "{}", ";"])
                     .output().await;
             }
 
@@ -2306,9 +2315,12 @@ async fn email_provision_dovecot(address: &str, password: &str) -> anyhow::Resul
 
     // Ensure mail directory exists with correct ownership
     let mail_dir = format!("/var/mail/vhosts/{}/{}", domain, local);
-    tokio::fs::create_dir_all(&mail_dir).await?;
-    tokio::process::Command::new("chown")
-        .args(["-R", "vmail:vmail", &mail_dir])
+    let _ = tokio::process::Command::new("sudo")
+        .args(["-n", "install", "-d", "-o", "vmail", "-g", "vmail", "-m", "755", mail_dir.as_str()])
+        .status()
+        .await;
+    tokio::process::Command::new("sudo")
+        .args(["-n", "chown", "-R", "vmail:vmail", mail_dir.as_str()])
         .status()
         .await?;
 
@@ -2320,8 +2332,8 @@ async fn email_provision_dovecot(address: &str, password: &str) -> anyhow::Resul
     email_update_passwd_file("/etc/dovecot/users", address, &entry).await?;
 
     // Reload dovecot auth without full restart
-    tokio::process::Command::new("doveadm")
-        .args(["reload"])
+    tokio::process::Command::new("sudo")
+        .args(["-n", "doveadm", "reload"])
         .status()
         .await
         .ok();

@@ -16,7 +16,7 @@
   let toastType: 'success' | 'error' = 'success';
 
   let showAddModal = false;
-  let addForm = { domain: '', php_version: '8.3', web_server: 'ols' };
+  let addForm = { domain: '', php_version: '8.4', web_server: 'ols' };
   let addLoading = false;
   let addError = '';
 
@@ -62,7 +62,7 @@
       });
       sites = [newSite, ...sites];
       showAddModal = false;
-      addForm = { domain: '', php_version: '8.3', web_server: 'ols' };
+      addForm = { domain: '', php_version: '8.4', web_server: 'ols' };
       showToast(`Site ${newSite.domain} created`, 'success');
     } catch (err: unknown) {
       const e = err as { message?: string };

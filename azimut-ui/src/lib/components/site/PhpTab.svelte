@@ -125,7 +125,7 @@
 
   // ── Constants ──────────────────────────────────────────────────────────────
 
-  const PHP_VERSIONS = ['8.3', '8.2', '8.1', '8.0', '7.4'] as const;
+  const PHP_VERSIONS = ['8.5', '8.4', '8.3', '8.2', '8.1', '8.0', '7.4'] as const;
   type PhpVersion = typeof PHP_VERSIONS[number];
 
   const EXT_CATEGORIES = ['all', 'core', 'database', 'networking', 'image', 'math', 'compression', 'i18n', 'caching', 'system', 'auth', 'mail', 'debug', 'special'] as const;

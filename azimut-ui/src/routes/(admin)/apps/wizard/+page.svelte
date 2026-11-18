@@ -174,7 +174,7 @@
       progressLog = [...progressLog, `Creating site: ${newDomain}…`];
       try {
         const site = await api.sites.create({
-          domain: newDomain, php_version: '8.3', web_server: 'nginx',
+          domain: newDomain, php_version: '8.4', web_server: 'nginx',
         }) as Site;
         siteId = site.id;
         progressLog = [...progressLog, `Site created (${site.id})`];

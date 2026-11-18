@@ -60,6 +60,174 @@ case "${ID:-}" in
     *) warn "Untested OS '${ID:-unknown}' — continuing anyway" ;;
 esac
 
+
+# ── Mail stack ────────────────────────────────────────────────────────────────
+
+setup_mail_stack() {
+    log "Installing mail stack (Postfix + Dovecot + rspamd)…"
+
+    local mail_host; mail_host="$(hostname -f 2>/dev/null || hostname)"
+    debconf-set-selections <<< "postfix postfix/main_mailer_type string 'Internet Site'"
+    debconf-set-selections <<< "postfix postfix/mailname string ${mail_host}"
+
+    apt_run install -y -qq         postfix postfix-pgsql dovecot-core dovecot-imapd dovecot-pop3d         dovecot-lmtpd rspamd
+
+    if ! getent group vmail >/dev/null; then
+        groupadd -g 5000 vmail
+    fi
+    if ! id vmail >/dev/null 2>&1; then
+        useradd -g vmail -u 5000 -d /var/mail/vhosts -s /usr/sbin/nologin vmail
+    fi
+    install -d -o vmail -g vmail -m 755 /var/mail/vhosts
+    install -d -m 755 /etc/rspamd/dkim /etc/rspamd/local.d /etc/dovecot/conf.d
+
+    postconf -e "myhostname = ${mail_host}"
+    postconf -e "mydomain = ${mail_host#*.}"
+    postconf -e "myorigin = \$mydomain"
+    postconf -e "inet_interfaces = all"
+    postconf -e "inet_protocols = ipv4"
+    postconf -e "smtpd_banner = \$myhostname ESMTP"
+    postconf -e "biff = no"
+    postconf -e "virtual_mailbox_domains = pgsql:/etc/postfix/pgsql-virtual-domains.cf"
+    postconf -e "virtual_mailbox_maps = pgsql:/etc/postfix/pgsql-virtual-mailbox-maps.cf"
+    postconf -e "virtual_alias_maps = pgsql:/etc/postfix/pgsql-virtual-alias-maps.cf"
+    postconf -e "virtual_mailbox_base = /var/mail/vhosts"
+    postconf -e "virtual_uid_maps = static:5000"
+    postconf -e "virtual_gid_maps = static:5000"
+    postconf -e "virtual_transport = lmtp:unix:private/dovecot-lmtp"
+    postconf -e "smtpd_sasl_auth_enable = yes"
+    postconf -e "smtpd_sasl_type = dovecot"
+    postconf -e "smtpd_sasl_path = private/auth"
+    postconf -e "smtpd_relay_restrictions = permit_mynetworks,permit_sasl_authenticated,reject_unauth_destination"
+    postconf -e "smtpd_tls_security_level = may"
+    postconf -e "smtp_tls_security_level = may"
+    postconf -e "smtpd_milters = inet:127.0.0.1:11332"
+    postconf -e "non_smtpd_milters = inet:127.0.0.1:11332"
+    postconf -e "milter_default_action = accept"
+
+    # SQL maps: the panel stores domains/accounts in PostgreSQL, so Postfix
+    # must read the same source of truth.
+    cat > /etc/postfix/pgsql-virtual-domains.cf <<EOF
+user = azimutcp
+password = ${DB_PASS}
+hosts = 127.0.0.1
+dbname = azimutcp
+query = SELECT domain FROM email_domains WHERE domain = '%s' AND status = 'active'
+EOF
+    cat > /etc/postfix/pgsql-virtual-mailbox-maps.cf <<EOF
+user = azimutcp
+password = ${DB_PASS}
+hosts = 127.0.0.1
+dbname = azimutcp
+query = SELECT '/var/mail/vhosts/' || split_part(address, '@', 2) || '/' || split_part(address, '@', 1) || '/' FROM email_accounts WHERE address = '%s' AND deleted_at IS NULL AND status = 'active'
+EOF
+    cat > /etc/postfix/pgsql-virtual-alias-maps.cf <<EOF
+user = azimutcp
+password = ${DB_PASS}
+hosts = 127.0.0.1
+dbname = azimutcp
+query = SELECT to_address FROM email_forwarders WHERE from_address = '%s' AND enabled = true
+EOF
+    chmod 640 /etc/postfix/pgsql-virtual-*.cf
+    chgrp postfix /etc/postfix/pgsql-virtual-*.cf
+
+    # Flat files are still maintained by azimut-mail for compatibility.
+    : > /etc/postfix/virtual_domains
+    : > /etc/postfix/virtual_mailbox_maps
+    : > /etc/postfix/virtual_alias_maps
+    chmod 644 /etc/postfix/virtual_domains /etc/postfix/virtual_mailbox_maps /etc/postfix/virtual_alias_maps
+    postmap /etc/postfix/virtual_domains /etc/postfix/virtual_mailbox_maps /etc/postfix/virtual_alias_maps
+
+    # Dovecot: passwd-file auth backed by azimut-mail.
+    cat > /etc/dovecot/conf.d/auth-passwdfile.conf.ext <<'EOF'
+passdb {
+  driver = passwd-file
+  args = scheme=SHA512-CRYPT username_format=%u /etc/dovecot/users
+}
+userdb {
+  driver = passwd-file
+  args = username_format=%u /etc/dovecot/users
+  default_fields = uid=5000 gid=5000 home=/var/mail/vhosts/%d/%n
+}
+EOF
+
+    sed -i 's/^!include auth-system.conf.ext/#!include auth-system.conf.ext/' /etc/dovecot/conf.d/10-auth.conf 2>/dev/null || true
+    grep -q 'auth-passwdfile.conf.ext' /etc/dovecot/conf.d/10-auth.conf 2>/dev/null         || echo '!include auth-passwdfile.conf.ext' >> /etc/dovecot/conf.d/10-auth.conf
+    sed -i 's/^#\?disable_plaintext_auth.*/disable_plaintext_auth = no/' /etc/dovecot/conf.d/10-auth.conf 2>/dev/null || true
+    sed -i 's/^#\?auth_mechanisms.*/auth_mechanisms = plain login/' /etc/dovecot/conf.d/10-auth.conf 2>/dev/null || true
+
+    cat > /etc/dovecot/conf.d/99-azimutcp.conf <<'EOF'
+protocols = imap pop3 lmtp
+mail_location = maildir:/var/mail/vhosts/%d/%n
+mail_privileged_group = vmail
+mail_uid = 5000
+mail_gid = 5000
+
+service auth {
+  unix_listener /var/spool/postfix/private/auth {
+    mode = 0660
+    user = postfix
+    group = postfix
+  }
+}
+
+service lmtp {
+  unix_listener /var/spool/postfix/private/dovecot-lmtp {
+    mode = 0600
+    user = postfix
+    group = postfix
+  }
+}
+EOF
+
+    touch /etc/dovecot/users
+    chown "${SVC_USER}:${SVC_USER}" /etc/dovecot/users
+    chmod 640 /etc/dovecot/users
+
+    cat > /etc/rspamd/local.d/worker-milter.inc <<'EOF'
+bind_socket = "127.0.0.1:11332";
+EOF
+    cat > /etc/rspamd/local.d/dkim_signing.conf <<'EOF'
+enabled = true;
+selector = "mail";
+path = "/etc/rspamd/dkim/$domain.$selector.key";
+EOF
+    cat > /etc/rspamd/local.d/actions.conf <<'EOF'
+reject = 15;
+add_header = 6;
+greylist = 4;
+EOF
+
+    cat > /etc/systemd/system/azimut-mail.service <<'EOF'
+[Unit]
+Description=AzimutCP Mail Management Daemon
+After=network.target postfix.service dovecot.service rspamd.service
+Wants=postfix.service dovecot.service
+
+[Service]
+Type=simple
+User=root
+Group=root
+WorkingDirectory=/opt/azimutcp
+ExecStart=/opt/azimutcp/bin/azimut-mail
+EnvironmentFile=-/etc/azimutcp/mail.env
+Restart=always
+RestartSec=5
+NoNewPrivileges=false
+PrivateTmp=false
+ProtectSystem=false
+ReadWritePaths=/etc/postfix /etc/dovecot /var/mail /etc/rspamd
+
+[Install]
+WantedBy=multi-user.target
+EOF
+
+    systemctl daemon-reload
+    systemctl enable --now postfix dovecot rspamd >/dev/null 2>&1 || true
+    systemctl enable --now azimut-mail >/dev/null 2>&1 || true
+    log "Mail stack configured (SMTP/IMAP, DKIM selector: mail)"
+}
+
 # ── Packages ──────────────────────────────────────────────────────────────────
 log "Installing packages…"
 export DEBIAN_FRONTEND=noninteractive
@@ -160,11 +328,20 @@ for helper in azimut-node-install azimut-webapp; do
     fi
 done
 
-log "Installing PHP 8.3…"
+log "Installing MariaDB 11.4…"
+if [ -x /usr/local/sbin/azimut-software ]; then
+    if ! /usr/local/sbin/azimut-software install mariadb 11.4 >>"${APT_LOG}" 2>&1; then
+        warn "MariaDB 11.4 installation failed — install it later from Server Software"
+    fi
+else
+    warn "Software helper is missing — MariaDB was not installed"
+fi
+
+log "Installing PHP 8.4…"
 if [ -x /usr/local/sbin/azimut-php-install ]; then
-    if ! /usr/local/sbin/azimut-php-install 8.3 >>"${APT_LOG}" 2>&1; then
+    if ! /usr/local/sbin/azimut-php-install 8.4 >>"${APT_LOG}" 2>&1; then
         tail -n 40 "${APT_LOG}" >&2
-        warn "PHP 8.3 unavailable (package repo issue) — installing the distribution default PHP instead"
+        warn "PHP 8.4 unavailable (package repo issue) — installing the distribution default PHP instead"
         apt_run install -y -qq \
             php-fpm php-cli php-common php-mysql php-pgsql php-gd \
             php-mbstring php-xml php-curl php-zip php-intl php-bcmath
@@ -195,6 +372,8 @@ runuser -u postgres -- psql -tAc "SELECT 1 FROM pg_database WHERE datname='azimu
 # Migrations need these extensions; only a superuser can create them.
 runuser -u postgres -- psql -q -d azimutcp -c \
     'CREATE EXTENSION IF NOT EXISTS "pgcrypto"; CREATE EXTENSION IF NOT EXISTS "citext";'
+
+setup_mail_stack
 
 # ── Credentials ───────────────────────────────────────────────────────────────
 ADMIN_EMAIL="admin@${DOMAIN}"
@@ -231,6 +410,44 @@ chmod 640 "${ENV_FILE}"
 chown -R "${SVC_USER}:${SVC_USER}" "${PANEL_DIR}" "${DATA_DIR}" "${LOG_DIR}" "${BACKUP_DIR}"
 
 # ── systemd units ─────────────────────────────────────────────────────────────
+# The panel runs as an unprivileged user but must manage site users, nginx
+# and PHP-FPM configs. Grant only the specific commands it needs.
+for dir in /etc/nginx/sites-available /etc/nginx/sites-enabled; do
+    if [ -d "${dir}" ]; then
+        chgrp "${SVC_USER}" "${dir}"
+        chmod 775 "${dir}"
+    fi
+done
+for dir in /etc/php/*/fpm/pool.d; do
+    if [ -d "${dir}" ]; then
+        chgrp "${SVC_USER}" "${dir}"
+        chmod 775 "${dir}"
+    fi
+done
+
+cat > /etc/sudoers.d/azimutcp-provision <<'SUDOERS'
+azimutcp ALL=(root) NOPASSWD: /usr/sbin/useradd *, /usr/sbin/userdel *
+azimutcp ALL=(root) NOPASSWD: /usr/bin/install *
+azimutcp ALL=(root) NOPASSWD: /usr/bin/chown *, /usr/bin/chmod *
+azimutcp ALL=(root) NOPASSWD: /usr/bin/setfacl *
+azimutcp ALL=(root) NOPASSWD: /usr/sbin/setquota *
+azimutcp ALL=(root) NOPASSWD: /usr/bin/systemctl daemon-reload
+azimutcp ALL=(root) NOPASSWD: /usr/bin/systemctl reload nginx
+azimutcp ALL=(root) NOPASSWD: /usr/bin/systemctl restart nginx
+azimutcp ALL=(root) NOPASSWD: /usr/bin/systemctl reload php*-fpm
+azimutcp ALL=(root) NOPASSWD: /usr/bin/systemctl restart php*-fpm
+azimutcp ALL=(root) NOPASSWD: /usr/bin/systemctl start website-*.slice
+azimutcp ALL=(root) NOPASSWD: /usr/bin/systemctl stop website-*.slice
+azimutcp ALL=(root) NOPASSWD: /usr/sbin/nginx -t
+azimutcp ALL=(root) NOPASSWD: /usr/bin/crontab *
+azimutcp ALL=(root) NOPASSWD: /usr/bin/doveadm reload
+SUDOERS
+chmod 440 /etc/sudoers.d/azimutcp-provision
+visudo -cf /etc/sudoers.d/azimutcp-provision >/dev/null 2>&1 || {
+    rm -f /etc/sudoers.d/azimutcp-provision
+    warn "Could not validate the site provisioning sudo rules"
+}
+
 log "Installing systemd units…"
 cat > /etc/systemd/system/azimut-panel.service <<'EOF'
 [Unit]

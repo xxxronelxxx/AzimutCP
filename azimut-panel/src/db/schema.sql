@@ -79,7 +79,7 @@ CREATE TABLE sites (
     id                  UUID         PRIMARY KEY DEFAULT gen_random_uuid(),
     domain              VARCHAR(253) NOT NULL,
     status              site_status  NOT NULL DEFAULT 'provisioning',
-    php_version         VARCHAR(8)   NOT NULL DEFAULT '8.3',
+    php_version         VARCHAR(8)   NOT NULL DEFAULT '8.4',
     web_server          VARCHAR(16)  NOT NULL DEFAULT 'ols',  -- ols|nginx|apache|lse
     unix_user           VARCHAR(64)  NOT NULL,
     server_id           UUID         REFERENCES servers(id) ON DELETE SET NULL,
