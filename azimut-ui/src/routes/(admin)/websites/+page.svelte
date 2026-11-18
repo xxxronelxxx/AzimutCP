@@ -31,6 +31,12 @@
   let quickSetup             = true;
   let diskQuota              = '';
   let phpPreset              = 'none';
+  let aliasInput             = '';
+  let createMail             = false;
+  let createDns              = true;
+  let createSsl              = true;
+  let createDb               = false;
+  let dbType                 = 'mysql';
   let newSite: CreateSitePayload = {
     domain:     '',
     php_version: '8.4',
@@ -140,6 +146,12 @@
     quickSetup = true;
     diskQuota = '';
     phpPreset = 'none';
+    aliasInput = '';
+    createMail = false;
+    createDns = true;
+    createSsl = true;
+    createDb = false;
+    dbType = 'mysql';
     showCreateModal = true;
   }
 
@@ -151,14 +163,42 @@
     createLoading = true;
     createError   = '';
     try {
-      const created = await api.sites.create(newSite);
+      const aliases = aliasInput
+        .split(/[\s,]+/)
+        .map(a => normalizeDomain(a))
+        .filter(Boolean);
+      const created = await api.sites.create({ ...newSite, aliases });
+
+      const failures: string[] = [];
+      if (createMail) {
+        try { await api.email.domains.create({ site_id: created.id }); }
+        catch (e: any) { failures.push(`почта: ${e?.message ?? e?.error ?? 'ошибка'}`); }
+      }
+      if (createDns) {
+        try { await api.dns.zones.create({ domain: created.domain, site_id: created.id }); }
+        catch (e: any) { failures.push(`DNS: ${e?.message ?? e?.error ?? 'ошибка'}`); }
+      }
+      if (createSsl) {
+        try { await api.sites.issueSSL(created.id); }
+        catch (e: any) { failures.push(`SSL: ${e?.message ?? e?.error ?? 'ошибка'}`); }
+      }
+      if (createDb) {
+        const dbName = created.domain.replace(/[^a-z0-9]/g, '_').slice(0, 20) + '_db';
+        try { await api.databases.create({ site_id: created.id, db_type: dbType, db_name: dbName }); }
+        catch (e: any) { failures.push(`база данных: ${e?.message ?? e?.error ?? 'ошибка'}`); }
+      }
+
       sites = [created, ...sites];
       applyFilters();
       showCreateModal = false;
-      showToast(`${created.domain} created`, 'success');
+      if (failures.length) {
+        showToast(`${created.domain} создан. Не удалось: ${failures.join('; ')}`, 'error');
+      } else {
+        showToast(`${created.domain} создан`, 'success');
+      }
     } catch (err: unknown) {
       const e = err as { message?: string };
-      createError = e.message ?? 'Failed to create website';
+      createError = e.message ?? 'Не удалось создать сайт';
     } finally {
       createLoading = false;
     }
@@ -1099,7 +1139,7 @@
         <div>
           <label class="block text-sm font-medium text-foreground mb-2">PHP version</label>
           <div class="grid grid-cols-5 gap-2">
-            {#each ['8.3', '8.2', '8.1', '8.0', '7.4'] as ver}
+            {#each ['8.5', '8.4', '8.3', '8.2', '8.1'] as ver}
               <button
                 type="button"
                 on:click={() => newSite.php_version = ver}
@@ -1112,6 +1152,58 @@
               </button>
             {/each}
           </div>
+        </div>
+
+        <!-- Дополнительные домены -->
+        <div>
+          <label class="block text-sm font-medium text-foreground mb-1.5" for="new-aliases">
+            Дополнительные домены
+            <span class="text-muted-foreground font-normal">(через запятую)</span>
+          </label>
+          <input
+            id="new-aliases"
+            type="text"
+            bind:value={aliasInput}
+            placeholder="www.example.com, shop.example.com"
+            autocomplete="off"
+            class="h-9 rounded-lg border border-border bg-background px-3 text-sm text-foreground
+                   placeholder:text-muted-foreground focus:outline-none focus:ring-2 focus:ring-primary/50
+                   focus:border-primary w-full"
+          />
+        </div>
+
+        <!-- Что создать вместе с сайтом -->
+        <div>
+          <label class="block text-sm font-medium text-foreground mb-2">Создать вместе с сайтом</label>
+          <div class="grid grid-cols-2 gap-2 text-sm">
+            <label class="flex items-center gap-2 text-foreground">
+              <input type="checkbox" bind:checked={createMail} class="accent-[var(--accent)]" />
+              Почтовый домен
+            </label>
+            <label class="flex items-center gap-2 text-foreground">
+              <input type="checkbox" bind:checked={createDns} class="accent-[var(--accent)]" />
+              DNS-зона
+            </label>
+            <label class="flex items-center gap-2 text-foreground">
+              <input type="checkbox" bind:checked={createSsl} class="accent-[var(--accent)]" />
+              SSL Let's Encrypt
+            </label>
+            <label class="flex items-center gap-2 text-foreground">
+              <input type="checkbox" bind:checked={createDb} class="accent-[var(--accent)]" />
+              База данных
+            </label>
+          </div>
+
+          {#if createDb}
+            <div class="grid grid-cols-2 gap-2 mt-2">
+              <select bind:value={dbType}
+                class="h-9 rounded-lg border border-border bg-background px-3 text-sm text-foreground">
+                <option value="mysql">MySQL / MariaDB</option>
+                <option value="postgres">PostgreSQL</option>
+              </select>
+              <p class="text-xs text-muted-foreground self-center">Имя базы создастся автоматически</p>
+            </div>
+          {/if}
         </div>
 
         {#if !quickSetup}

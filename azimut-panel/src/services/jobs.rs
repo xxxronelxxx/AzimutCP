@@ -161,6 +161,10 @@ async fn dispatch_provision_site(state: &Arc<AppState>, job: &serde_json::Value)
     let php_version = job["php_version"].as_str().unwrap_or("8.4").to_string();
     let web_server  = job["web_server"].as_str().unwrap_or("nginx").to_string();
     let unix_user   = job["unix_user"].as_str().unwrap_or("").to_string();
+    let aliases: Vec<String> = job["aliases"]
+        .as_array()
+        .map(|a| a.iter().filter_map(|v| v.as_str().map(str::to_string)).collect())
+        .unwrap_or_default();
     let server_id   = job["server_id"].as_str().and_then(|s| Uuid::parse_str(s).ok());
 
     if site_id.is_nil() || domain.is_empty() || unix_user.is_empty() {
@@ -171,6 +175,7 @@ async fn dispatch_provision_site(state: &Arc<AppState>, job: &serde_json::Value)
     let pjob = ProvisioningJob {
         site_id,
         domain,
+        aliases,
         php_version,
         web_server,
         unix_user,

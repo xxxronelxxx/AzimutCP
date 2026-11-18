@@ -19,6 +19,8 @@ use super::auth::Claims;
 #[derive(Debug, Deserialize)]
 pub struct CreateSiteRequest {
     pub domain:       String,
+    #[serde(default)]
+    pub aliases:      Vec<String>,
     pub php_version:  String,         // "8.3"
     pub web_server:   String,         // "ols" | "nginx" | "apache"
     pub server_id:    Option<Uuid>,   // None → local server
@@ -51,6 +53,7 @@ pub struct SiteResponse {
     pub server_label: Option<String>,
     pub ssl_status:   String,         // "active" | "pending" | "expired" | "none"
     pub ssl_expires_at: Option<DateTime<Utc>>,
+    pub aliases:      Vec<String>,
     pub created_at:   DateTime<Utc>,
     pub suspended_at: Option<DateTime<Utc>>,
 }
@@ -127,7 +130,8 @@ async fn list_sites(
                   s.unix_user, s.disk_mb, s.server_id, s.created_at, s.suspended_at,
                   srv.label AS "server_label?",
                   ssl.status::text AS "ssl_status?",
-                  ssl.expires_at AS "ssl_expires_at?"
+                  ssl.expires_at AS "ssl_expires_at?",
+                  ARRAY(SELECT domain FROM site_aliases WHERE site_id = s.id) AS "aliases!"
            FROM sites s
            LEFT JOIN servers srv ON srv.id = s.server_id
            LEFT JOIN ssl_certs ssl ON ssl.site_id = s.id
@@ -157,6 +161,7 @@ async fn list_sites(
         server_label:  r.server_label,
         ssl_status:    r.ssl_status.unwrap_or_else(|| "none".into()),
         ssl_expires_at: r.ssl_expires_at,
+        aliases:       r.aliases,
         created_at:    r.created_at,
         suspended_at:  r.suspended_at,
     }).collect();
@@ -178,7 +183,8 @@ async fn get_site(
                   s.unix_user, s.disk_mb, s.server_id, s.created_at, s.suspended_at,
                   srv.label AS "server_label?",
                   ssl.status::text AS "ssl_status?",
-                  ssl.expires_at AS "ssl_expires_at?"
+                  ssl.expires_at AS "ssl_expires_at?",
+                  ARRAY(SELECT domain FROM site_aliases WHERE site_id = s.id) AS "aliases!"
            FROM sites s
            LEFT JOIN servers srv ON srv.id = s.server_id
            LEFT JOIN ssl_certs ssl ON ssl.site_id = s.id
@@ -202,6 +208,7 @@ async fn get_site(
         server_label:  site.server_label,
         ssl_status:    site.ssl_status.unwrap_or_else(|| "none".into()),
         ssl_expires_at: site.ssl_expires_at,
+        aliases:       site.aliases,
         created_at:    site.created_at,
         suspended_at:  site.suspended_at,
     }))
@@ -276,6 +283,16 @@ async fn create_site(
     .execute(&state.db)
     .await?;
 
+    for alias in &aliases {
+        sqlx::query!(
+            "INSERT INTO site_aliases (site_id, domain) VALUES ($1, $2)
+             ON CONFLICT (site_id, domain) DO NOTHING",
+            site_id, alias
+        )
+        .execute(&state.db)
+        .await?;
+    }
+
     {
         use redis::AsyncCommands;
         let job = serde_json::json!({
@@ -285,6 +302,7 @@ async fn create_site(
             "php_version": req.php_version,
             "web_server": req.web_server,
             "unix_user": unix_user,
+            "aliases": aliases.clone(),
             "server_id": req.server_id,
         });
         let mut conn = state.valkey.clone();
@@ -303,6 +321,7 @@ async fn create_site(
         server_label:  None,
         ssl_status:    "pending".into(),
         ssl_expires_at: None,
+        aliases:       aliases.clone(),
         created_at:    Utc::now(),
         suspended_at:  None,
     };

@@ -26,6 +26,7 @@ export interface Site {
 
 export interface CreateSitePayload {
   domain:             string;
+  aliases?:           string[];
   php_version:        string;
   web_server:         string;
   server_id?:         string;

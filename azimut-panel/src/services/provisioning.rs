@@ -8,6 +8,7 @@ pub mod agentproto { tonic::include_proto!("azimut"); }
 pub struct ProvisioningJob {
     pub site_id:     Uuid,
     pub domain:      String,
+    pub aliases:     Vec<String>,
     pub php_version: String,
     pub web_server:  String,
     pub unix_user:   String,
@@ -581,6 +582,18 @@ pub fn write_php_vhost_pub(job: &ProvisioningJob) -> anyhow::Result<()> {
     write_nginx_vhost(job)
 }
 
+/// Build the nginx server_name list: primary domain, www, aliases and www.aliases.
+fn server_names(job: &ProvisioningJob) -> String {
+    let mut names = vec![job.domain.clone(), format!("www.{}", job.domain)];
+    for alias in &job.aliases {
+        names.push(alias.clone());
+        if !alias.starts_with("www.") {
+            names.push(format!("www.{alias}"));
+        }
+    }
+    names.join(" ")
+}
+
 fn write_nginx_vhost(job: &ProvisioningJob) -> anyhow::Result<()> {
     // Belt-and-suspenders path-traversal check: domain was already validated by regex
     // but we assert here so that the unsafe path can never be reached if validation is
@@ -598,7 +611,7 @@ fn write_nginx_vhost(job: &ProvisioningJob) -> anyhow::Result<()> {
          # DO NOT EDIT — managed by azimut-panel.\n\
          server {{\n\
              listen 80;\n\
-             server_name {domain} www.{domain};\n\
+             server_name {names};\n\
              root /home/{user}/public_html;\n\
              index index.php index.html index.htm;\n\
          \n\
@@ -634,6 +647,7 @@ fn write_nginx_vhost(job: &ProvisioningJob) -> anyhow::Result<()> {
              }}\n\
          }}\n",
         domain = job.domain,
+        names  = server_names(job),
         user   = job.unix_user,
         socket = socket_path,
     );
@@ -1021,6 +1035,7 @@ pub async fn unsuspend_site_files(state: &Arc<AppState>, site_id: Uuid) -> anyho
     let job = ProvisioningJob {
         site_id,
         domain:      site.domain,
+        aliases:     Vec::new(),
         php_version: site.php_version,
         web_server:  site.web_server,
         unix_user:   site.unix_user,
@@ -1071,6 +1086,7 @@ pub async fn change_php_version(
     let job = ProvisioningJob {
         site_id,
         domain:      site.domain,
+        aliases:     Vec::new(),
         php_version: new_version.to_string(),
         web_server:  site.web_server,
         unix_user:   site.unix_user,
@@ -1114,6 +1130,7 @@ pub fn switch_webserver_sync(domain: &str, unix_user: &str, new_ws: &str, php_ve
     let job = ProvisioningJob {
         site_id:     uuid::Uuid::nil(),
         domain:      domain.to_string(),
+        aliases:     Vec::new(),
         php_version: ver.to_string(),
         web_server:  new_ws.to_string(),
         unix_user:   unix_user.to_string(),
