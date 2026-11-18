@@ -579,10 +579,18 @@ async fn load_or_create_account(acme_url: &str, admin_email: &str) -> anyhow::Re
     std::fs::create_dir_all("/etc/azimutcp/acme")
         .map_err(|e| anyhow::anyhow!("create ACME dir failed: {}", e))?;
 
+    // Let's Encrypt rejects contacts whose domain is an IP address or has no
+    // dot (e.g. admin@127.0.0.1). Omit the contact in that case instead of
+    // failing the whole certificate order.
+    let email_domain = admin_email.split('@').nth(1).unwrap_or("");
+    let contact_ok = email_domain.contains('.')
+        && email_domain.parse::<std::net::IpAddr>().is_err();
     let contact = format!("mailto:{}", admin_email);
+    let contacts: Vec<&str> = if contact_ok { vec![&contact] } else { Vec::new() };
+
     let (account, credentials) = Account::create(
         &NewAccount {
-            contact:                  &[&contact],
+            contact:                  &contacts,
             terms_of_service_agreed:  true,
             only_return_existing:     false,
         },

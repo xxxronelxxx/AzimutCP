@@ -183,6 +183,9 @@ EOF
     touch /etc/dovecot/users
     chown "${SVC_USER}:${SVC_USER}" /etc/dovecot/users
     chmod 640 /etc/dovecot/users
+    # The panel writes users.tmp.<pid> and renames it atomically.
+    chgrp "${SVC_USER}" /etc/dovecot
+    chmod 775 /etc/dovecot
 
     cat > /etc/rspamd/local.d/worker-milter.inc <<'EOF'
 bind_socket = "127.0.0.1:11332";
