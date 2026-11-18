@@ -51,6 +51,32 @@ panel_pg_major() {
     psql --version 2>/dev/null | grep -oE '[0-9]+' | head -1 || true
 }
 
+
+setup_mysql_admin() {
+    local db_pass; db_pass="$(openssl rand -hex 16)"
+    local mysql_cmd=(mysql)
+    if ! "${mysql_cmd[@]}" -e 'SELECT 1' >/dev/null 2>&1; then
+        if [ -f /etc/mysql/debian.cnf ]; then
+            mysql_cmd=(mysql --defaults-file=/etc/mysql/debian.cnf)
+        fi
+    fi
+
+    if "${mysql_cmd[@]}" -e "CREATE USER IF NOT EXISTS 'azimutcp'@'localhost' IDENTIFIED BY '${db_pass}'; GRANT ALL PRIVILEGES ON *.* TO 'azimutcp'@'localhost' WITH GRANT OPTION; FLUSH PRIVILEGES;" >/dev/null 2>&1; then
+        install -d -m750 /etc/azimutcp
+        cat > /etc/azimutcp/mysql-admin.cnf <<EOF
+[client]
+user=azimutcp
+password=${db_pass}
+host=127.0.0.1
+EOF
+        chown root:"${AZIMUT_PANEL_USER:-azimutcp}" /etc/azimutcp/mysql-admin.cnf 2>/dev/null || true
+        chmod 640 /etc/azimutcp/mysql-admin.cnf
+        echo "[azimut-software] created MariaDB/MySQL admin user for the panel"
+    else
+        echo "warning: could not create a database admin user; set one manually in /etc/azimutcp/mysql-admin.cnf" >&2
+    fi
+}
+
 case "${ID}" in
     php)
         if [[ ! "${VER}" =~ ^[578]\.[0-9]$ ]]; then
@@ -110,12 +136,7 @@ case "${ID}" in
             apt_update
             apt_install mysql-community-server
             systemctl enable --now mysql >/dev/null 2>&1 || true
-            install -d -m750 /etc/azimutcp
-            printf '[client]
-user=root
-socket=/run/mysqld/mysqld.sock
-' > /etc/azimutcp/mysql-admin.cnf
-            chmod 600 /etc/azimutcp/mysql-admin.cnf
+            setup_mysql_admin
         else
             apt_remove mysql-community-server
         fi
@@ -135,12 +156,7 @@ socket=/run/mysqld/mysqld.sock
             apt_update
             apt_install mariadb-server
             systemctl enable --now mariadb >/dev/null 2>&1 || true
-            install -d -m750 /etc/azimutcp
-            printf '[client]
-user=root
-socket=/run/mysqld/mysqld.sock
-' > /etc/azimutcp/mysql-admin.cnf
-            chmod 600 /etc/azimutcp/mysql-admin.cnf
+            setup_mysql_admin
         else
             apt_remove mariadb-server
         fi

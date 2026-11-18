@@ -537,6 +537,7 @@ azimutcp ALL=(root) NOPASSWD: /usr/bin/systemctl stop website-*.slice
 azimutcp ALL=(root) NOPASSWD: /usr/sbin/nginx -t
 azimutcp ALL=(root) NOPASSWD: /usr/bin/crontab *
 azimutcp ALL=(root) NOPASSWD: /usr/bin/doveadm reload
+azimutcp ALL=(postgres) NOPASSWD: /usr/bin/psql
 SUDOERS
 chmod 440 /etc/sudoers.d/azimutcp-provision
 visudo -cf /etc/sudoers.d/azimutcp-provision >/dev/null 2>&1 || {

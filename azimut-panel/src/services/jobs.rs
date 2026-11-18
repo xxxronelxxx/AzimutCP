@@ -672,8 +672,12 @@ async fn site_meta(state: &Arc<AppState>, site_id: Uuid) -> Option<(String, Stri
 }
 
 async fn run_mysql(sql: &str) -> bool {
-    tokio::process::Command::new("mysql").arg("-e").arg(sql).output().await
-        .map(|o| o.status.success()).unwrap_or(false)
+    tokio::process::Command::new("mysql")
+        .args(["--defaults-file=/etc/azimutcp/mysql-admin.cnf", "-e", sql])
+        .output()
+        .await
+        .map(|o| o.status.success())
+        .unwrap_or(false)
 }
 async fn run_psql(sql: &str) -> bool {
     tokio::process::Command::new("sudo").args(["-u", "postgres", "psql", "-tAc", sql]).output().await
